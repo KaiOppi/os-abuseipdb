@@ -45,6 +45,14 @@ rsync -az \
     "$SRC/etc/rc.syshook.d/start/20-abuseipdb" \
     "$DEV_HOST:/usr/local/etc/rc.syshook.d/start/"
 
+echo "==> syncing dashboard widget"
+rsync -az \
+    "$SRC/opnsense/www/js/widgets/AbuseIPDB.js" \
+    "$DEV_HOST:/usr/local/opnsense/www/js/widgets/"
+rsync -az \
+    "$SRC/opnsense/www/js/widgets/Metadata/AbuseIPDB.xml" \
+    "$DEV_HOST:/usr/local/opnsense/www/js/widgets/Metadata/"
+
 echo "==> fixing permissions + reloading"
 ssh "$DEV_HOST" "
     chmod +x /usr/local/opnsense/scripts/OPNsense/Abuseipdb/*.py || true

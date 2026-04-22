@@ -1,0 +1,18 @@
+<metadata>
+    <abuseipdb>
+        <filename>AbuseIPDB.js</filename>
+        <link>/ui/abuseipdb/</link>
+        <endpoints>
+            <endpoint>/api/abuseipdb/service/stats</endpoint>
+        </endpoints>
+        <translations>
+            <title>AbuseIPDB</title>
+            <blocklist>Blocklist IPs</blocklist>
+            <last_download>Last download</last_download>
+            <quota>API quota left</quota>
+            <reports_today>Reports today</reports_today>
+            <reports_total>Reports total</reports_total>
+            <settings>Plugin settings</settings>
+        </translations>
+    </abuseipdb>
+</metadata>
