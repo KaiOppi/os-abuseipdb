@@ -14,11 +14,13 @@ require_once("util.inc");
 
 use OPNsense\Core\Config;
 use OPNsense\Firewall\Alias;
+use OPNsense\Cron\Cron;
 use OPNsense\Abuseipdb\Abuseipdb;
 
 $pluginCfg = new Abuseipdb();
 $plugin_enabled = (string)$pluginCfg->general->enabled === "1";
 $blacklist_on = (string)$pluginCfg->blacklist->enabled === "1";
+$reporter_on = (string)$pluginCfg->reporter->enabled === "1";
 
 $alias_name = "abuseipdb_blacklist";
 $rule_marker = "[os-abuseipdb] block AbuseIPDB known attackers";
@@ -116,9 +118,88 @@ if ($plugin_enabled && $blacklist_on) {
     }
 }
 
-if ($dirty_model || $dirty_classic) {
-    write_config("os-abuseipdb: alias + user WAN rule");
-    echo "config saved\n";
-} else {
+// --- Cron jobs ---
+$cron_mdl = new Cron();
+$dirty_cron = false;
+
+function find_cron_job($mdl, $descr) {
+    foreach ($mdl->jobs->job->iterateItems() as $uuid => $j) {
+        if ((string)$j->description === $descr) return [$uuid, $j];
+    }
+    return [null, null];
+}
+
+function ensure_cron($mdl, $descr, $command, $m, $h, $desired_enabled) {
+    [$uuid, $j] = find_cron_job($mdl, $descr);
+    $changed = false;
+    if ($j === null) {
+        if ($desired_enabled) {
+            $n = $mdl->jobs->job->Add();
+            $n->origin = "abuseipdb";
+            $n->enabled = "1";
+            $n->minutes = $m;
+            $n->hours = $h;
+            $n->days = "*";
+            $n->months = "*";
+            $n->weekdays = "*";
+            $n->who = "root";
+            $n->command = $command;
+            $n->description = $descr;
+            $changed = true;
+            echo "cron '$descr' created\n";
+        }
+    } else {
+        $want = $desired_enabled ? "1" : "0";
+        if ((string)$j->enabled !== $want) {
+            $j->enabled = $want;
+            $changed = true;
+            echo "cron '$descr' " . ($desired_enabled ? "re-enabled" : "disabled") . "\n";
+        }
+    }
+    return $changed;
+}
+
+// Download once per day at 03:13 (off-peak, avoid :00/:30)
+$dirty_cron |= ensure_cron(
+    $cron_mdl,
+    "os-abuseipdb: daily blacklist download",
+    "abuseipdb download",
+    "13", "3",
+    $plugin_enabled && $blacklist_on
+);
+
+// Reporter every 5 minutes
+$dirty_cron |= ensure_cron(
+    $cron_mdl,
+    "os-abuseipdb: reporter run",
+    "abuseipdb report",
+    "*/5", "*",
+    $plugin_enabled && $reporter_on
+);
+
+if ($dirty_cron) {
+    $errs = $cron_mdl->performValidation();
+    if (count($errs) > 0) {
+        foreach ($errs as $e) echo "cron validation: " . $e->getMessage() . "\n";
+        exit(1);
+    }
+    $cron_mdl->serializeToConfig();
+}
+
+// Two-phase save: write_config() on legacy $config, then Config::save() on model tree.
+// Doing both in one pass loses model changes because write_config rewrites the tree
+// from the stale $config array.
+if ($dirty_classic) {
+    write_config("os-abuseipdb: classic WAN user rule");
+    echo "classic config saved\n";
+}
+if ($dirty_model || $dirty_cron) {
+    Config::getInstance()->save();
+    echo "model config saved\n";
+}
+if ($dirty_cron) {
+    shell_exec("/usr/local/sbin/configctl cron reload");
+}
+if (!$dirty_model && !$dirty_classic && !$dirty_cron) {
     echo "no changes\n";
 }
