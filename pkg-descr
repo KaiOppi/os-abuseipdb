@@ -1,0 +1,10 @@
+OPNsense plugin for bidirectional AbuseIPDB integration.
+
+Features:
+ * Automatic download of AbuseIPDB blacklist into a pf table
+ * Firewall alias integration for easy rule setup
+ * Log-based reporter: submit local firewall hits back to AbuseIPDB
+ * Dashboard widget with block / report / quota statistics
+ * Fire-and-forget: scheduled via cron, no manual maintenance
+
+WWW: https://github.com/KaiOppi/os-abuseipdb

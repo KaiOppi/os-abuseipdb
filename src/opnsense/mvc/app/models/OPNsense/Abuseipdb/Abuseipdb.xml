@@ -1,0 +1,72 @@
+<model>
+    <mount>//OPNsense/Abuseipdb</mount>
+    <description>AbuseIPDB plugin configuration</description>
+    <version>0.1.0</version>
+    <items>
+        <general>
+            <enabled type="BooleanField">
+                <default>0</default>
+                <Required>Y</Required>
+            </enabled>
+            <api_key type="TextField">
+                <Mask>/^[a-fA-F0-9]{80}$|^$/u</Mask>
+                <ValidationMessage>Enter an 80-character AbuseIPDB API key (hex).</ValidationMessage>
+                <default></default>
+            </api_key>
+        </general>
+        <blacklist>
+            <enabled type="BooleanField">
+                <default>0</default>
+                <Required>Y</Required>
+            </enabled>
+            <confidence_min type="IntegerField">
+                <MinimumValue>25</MinimumValue>
+                <MaximumValue>100</MaximumValue>
+                <default>90</default>
+                <Required>Y</Required>
+            </confidence_min>
+            <max_ips type="IntegerField">
+                <MinimumValue>100</MinimumValue>
+                <MaximumValue>500000</MaximumValue>
+                <default>10000</default>
+                <Required>Y</Required>
+            </max_ips>
+            <schedule type="TextField">
+                <Mask>/^[0-9\*\/\,\-\s]+$/u</Mask>
+                <ValidationMessage>Standard cron expression (e.g. "0 3 * * *" for 3 AM daily).</ValidationMessage>
+                <default>0 3 * * *</default>
+                <Required>Y</Required>
+            </schedule>
+        </blacklist>
+        <reporter>
+            <enabled type="BooleanField">
+                <default>0</default>
+                <Required>Y</Required>
+            </enabled>
+            <min_hits type="IntegerField">
+                <MinimumValue>1</MinimumValue>
+                <MaximumValue>1000</MaximumValue>
+                <default>3</default>
+                <Required>Y</Required>
+            </min_hits>
+            <rate_limit_per_ip_min type="IntegerField">
+                <MinimumValue>5</MinimumValue>
+                <MaximumValue>1440</MaximumValue>
+                <default>15</default>
+                <Required>Y</Required>
+            </rate_limit_per_ip_min>
+            <daily_quota type="IntegerField">
+                <MinimumValue>100</MinimumValue>
+                <MaximumValue>100000</MaximumValue>
+                <default>900</default>
+                <Required>Y</Required>
+            </daily_quota>
+            <default_categories type="TextField">
+                <Mask>/^[0-9,\s]*$/u</Mask>
+                <ValidationMessage>Comma-separated AbuseIPDB category IDs.</ValidationMessage>
+                <default>14,15</default>
+                <Required>Y</Required>
+            </default_categories>
+        </reporter>
+    </items>
+</model>

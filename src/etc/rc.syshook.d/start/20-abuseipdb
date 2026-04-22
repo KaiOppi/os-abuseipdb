@@ -1,0 +1,5 @@
+#!/bin/sh
+# Ensure the AbuseIPDB pf table exists at boot (empty is OK).
+/sbin/pfctl -t os_abuseipdb -T add 127.0.0.1 2>/dev/null || true
+/sbin/pfctl -t os_abuseipdb -T delete 127.0.0.1 2>/dev/null || true
+mkdir -p /var/db/abuseipdb

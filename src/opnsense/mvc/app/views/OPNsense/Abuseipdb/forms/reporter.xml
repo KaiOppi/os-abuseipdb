@@ -1,0 +1,32 @@
+<form>
+    <field>
+        <id>abuseipdb.reporter.enabled</id>
+        <label>Reporter enabled</label>
+        <type>checkbox</type>
+        <help>Submit local firewall block events to AbuseIPDB. Requires a rule label to mark reportable events.</help>
+    </field>
+    <field>
+        <id>abuseipdb.reporter.min_hits</id>
+        <label>Minimum hits before report</label>
+        <type>text</type>
+        <help>Number of block events from an IP before it is reported. Reduces false positives.</help>
+    </field>
+    <field>
+        <id>abuseipdb.reporter.rate_limit_per_ip_min</id>
+        <label>Rate limit per IP (min)</label>
+        <type>text</type>
+        <help>Minimum minutes between two reports for the same IP.</help>
+    </field>
+    <field>
+        <id>abuseipdb.reporter.daily_quota</id>
+        <label>Daily report quota</label>
+        <type>text</type>
+        <help>Maximum number of reports submitted per day. Free-tier allows 1000.</help>
+    </field>
+    <field>
+        <id>abuseipdb.reporter.default_categories</id>
+        <label>Default categories</label>
+        <type>text</type>
+        <help>Comma-separated AbuseIPDB category IDs used when a rule has no specific mapping. 14=PortScan, 15=Hacking, 18=BruteForce, 22=SSH.</help>
+    </field>
+</form>

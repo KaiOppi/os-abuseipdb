@@ -1,0 +1,14 @@
+<form>
+    <field>
+        <id>abuseipdb.general.enabled</id>
+        <label>Plugin enabled</label>
+        <type>checkbox</type>
+        <help>Master switch for the AbuseIPDB plugin. When disabled, no downloads or reports are made.</help>
+    </field>
+    <field>
+        <id>abuseipdb.general.api_key</id>
+        <label>API Key</label>
+        <type>text</type>
+        <help>Your AbuseIPDB API key (80 characters hex). Get one at https://www.abuseipdb.com/account/api</help>
+    </field>
+</form>

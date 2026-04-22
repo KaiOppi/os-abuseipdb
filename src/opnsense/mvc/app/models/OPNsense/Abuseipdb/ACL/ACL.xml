@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<acl>
+    <page-abuseipdb>
+        <name>AbuseIPDB</name>
+        <description>Allow access to the AbuseIPDB page</description>
+        <patterns>
+            <pattern>ui/abuseipdb/*</pattern>
+            <pattern>api/abuseipdb/*</pattern>
+        </patterns>
+    </page-abuseipdb>
+</acl>

@@ -1,0 +1,26 @@
+<form>
+    <field>
+        <id>abuseipdb.blacklist.enabled</id>
+        <label>Blacklist enabled</label>
+        <type>checkbox</type>
+        <help>Enable automatic download of the AbuseIPDB blacklist into the pf table.</help>
+    </field>
+    <field>
+        <id>abuseipdb.blacklist.confidence_min</id>
+        <label>Minimum confidence score</label>
+        <type>text</type>
+        <help>Only IPs with at least this confidence score (25-100) are included. 90 = high-quality hits only.</help>
+    </field>
+    <field>
+        <id>abuseipdb.blacklist.max_ips</id>
+        <label>Maximum number of IPs</label>
+        <type>text</type>
+        <help>Upper limit on IPs pulled per run. Free-tier supports 10,000.</help>
+    </field>
+    <field>
+        <id>abuseipdb.blacklist.schedule</id>
+        <label>Update schedule (cron)</label>
+        <type>text</type>
+        <help>Cron expression, e.g. "0 3 * * *" = daily at 03:00.</help>
+    </field>
+</form>
