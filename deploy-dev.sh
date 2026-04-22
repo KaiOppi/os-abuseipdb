@@ -5,9 +5,9 @@ set -e
 DEV_HOST="root@192.168.3.161"
 SRC="$(cd "$(dirname "$0")" && pwd)/src"
 
-# Compile .po -> .mo
+# Compile .po -> .mo (plugin-local path inside views/)
 if command -v msgfmt >/dev/null 2>&1; then
-    for po in "$SRC"/opnsense/mvc/app/locale/*/LC_MESSAGES/*.po; do
+    for po in "$SRC"/opnsense/mvc/app/views/OPNsense/Abuseipdb/locale/*/LC_MESSAGES/*.po; do
         [ -f "$po" ] && msgfmt -o "${po%.po}.mo" "$po"
     done
 fi
@@ -37,11 +37,8 @@ rsync -az \
     "$SRC/opnsense/service/conf/actions.d/actions_abuseipdb.conf" \
     "$DEV_HOST:/usr/local/opnsense/service/conf/actions.d/"
 
-echo "==> syncing locale .mo"
-ssh "$DEV_HOST" "mkdir -p /usr/local/opnsense/mvc/app/locale/de_DE/LC_MESSAGES"
-rsync -az \
-    "$SRC/opnsense/mvc/app/locale/de_DE/LC_MESSAGES/de_DE.mo" \
-    "$DEV_HOST:/usr/local/opnsense/mvc/app/locale/de_DE/LC_MESSAGES/" 2>/dev/null || true
+# Note: plugin-local locale is already inside views/OPNsense/Abuseipdb/locale/ — gets synced with views
+# We do NOT touch the global /usr/local/opnsense/mvc/app/locale/ anymore.
 
 echo "==> syncing rc hook"
 rsync -az \
