@@ -6,12 +6,12 @@ Copyright (c) 2026 Kai Schlestein
 BSD 2-Clause.
 """
 import sys
-from _common import get_config
+from _common import API_BASE, get_config
 
 try:
     import requests
 except ImportError:
-    print("requests library missing (py311-requests)")
+    print("requests library missing (install py311-requests)")
     sys.exit(1)
 
 
@@ -23,7 +23,7 @@ def main() -> int:
         return 1
     try:
         r = requests.get(
-            "https://api.abuseipdb.com/api/v2/check",
+            f"{API_BASE}/check",
             headers={"Key": api_key, "Accept": "application/json"},
             params={"ipAddress": "8.8.8.8"},
             timeout=10,
@@ -33,11 +33,17 @@ def main() -> int:
         return 2
 
     if r.status_code == 200:
-        print(f"OK — API reachable, key valid. Quota remaining: "
-              f"{r.headers.get('X-RateLimit-Remaining', '?')}")
+        quota = r.headers.get("X-RateLimit-Remaining", "?")
+        print(f"OK — API reachable, key valid. Quota remaining today: {quota}")
         return 0
+    if r.status_code == 401:
+        print("HTTP 401: API key rejected (check your key).")
+        return 3
+    if r.status_code == 429:
+        print("HTTP 429: rate limited (quota exhausted for today).")
+        return 4
     print(f"HTTP {r.status_code}: {r.text[:200]}")
-    return 3
+    return 5
 
 
 if __name__ == "__main__":

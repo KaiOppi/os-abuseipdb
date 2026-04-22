@@ -1,7 +1,7 @@
 <model>
     <mount>//OPNsense/Abuseipdb</mount>
     <description>AbuseIPDB plugin configuration</description>
-    <version>0.1.0</version>
+    <version>0.1.1</version>
     <items>
         <general>
             <enabled type="BooleanField">
@@ -31,12 +31,6 @@
                 <default>10000</default>
                 <Required>Y</Required>
             </max_ips>
-            <schedule type="TextField">
-                <Mask>/^[0-9\*\/\,\-\s]+$/u</Mask>
-                <ValidationMessage>Standard cron expression (e.g. "0 3 * * *" for 3 AM daily).</ValidationMessage>
-                <default>0 3 * * *</default>
-                <Required>Y</Required>
-            </schedule>
         </blacklist>
         <reporter>
             <enabled type="BooleanField">
