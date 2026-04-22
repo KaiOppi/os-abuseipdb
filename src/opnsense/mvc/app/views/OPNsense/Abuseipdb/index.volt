@@ -13,17 +13,31 @@
             updateServiceControlUI('abuseipdb');
         });
 
-        $("#saveAct").click(function(){
+        // Save all three tabs sequentially — saveFormToEndpoint handles one form at a time.
+        function saveAll() {
             saveFormToEndpoint(
                 url = "/api/abuseipdb/settings/set",
                 formid = 'frm_general',
                 callback_ok = function(){
-                    $("#responseMsg").removeClass("hidden").html(
-                        "{{ lang._('Configuration saved.') }}"
+                    saveFormToEndpoint(
+                        url = "/api/abuseipdb/settings/set",
+                        formid = 'frm_blacklist',
+                        callback_ok = function(){
+                            saveFormToEndpoint(
+                                url = "/api/abuseipdb/settings/set",
+                                formid = 'frm_reporter',
+                                callback_ok = function(){
+                                    $("#responseMsg").removeClass("hidden").html(
+                                        "{{ lang._('Configuration saved.') }}"
+                                    );
+                                }
+                            );
+                        }
                     );
                 }
             );
-        });
+        }
+        $("#saveAct").click(saveAll);
 
         $("#testConnectionAct").click(function(){
             ajaxCall(
