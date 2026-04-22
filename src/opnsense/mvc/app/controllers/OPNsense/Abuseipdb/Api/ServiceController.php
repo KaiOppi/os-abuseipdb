@@ -69,4 +69,22 @@ class ServiceController extends ApiMutableServiceControllerBase
         }
         return ['status' => 'failed', 'message' => 'POST required'];
     }
+
+    /**
+     * Return recent reports as JSON (for the Log tab in the plugin GUI).
+     */
+    public function reportsAction()
+    {
+        $limit = (int)($this->request->get('limit', 'int', 100));
+        if ($limit < 1) $limit = 100;
+        if ($limit > 500) $limit = 500;
+
+        $backend = new Backend();
+        $output = trim($backend->configdpRun('abuseipdb reports', [(string)$limit]));
+        $data = json_decode($output, true);
+        if (!is_array($data)) {
+            return ['status' => 'failed', 'raw' => $output];
+        }
+        return ['status' => 'ok', 'data' => $data];
+    }
 }
