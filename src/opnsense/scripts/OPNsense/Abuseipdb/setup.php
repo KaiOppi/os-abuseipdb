@@ -39,12 +39,12 @@ if ($plugin_enabled && $blacklist_on && $existing_alias === null) {
     $a = $alias_mdl->aliases->alias->Add();
     $a->enabled = "1";
     $a->name = $alias_name;
-    $a->type = "urltable";
+    // "external" = plugin manages pf-table content itself via pfctl,
+    // OPNsense doesn't try to fetch it (unlike urltable which only supports http[s]).
+    $a->type = "external";
     $a->proto = "IPv4";
     $a->counters = "1";
-    $a->updatefreq = "0.04167";
-    $a->content = "file:///var/db/abuseipdb/blocklist.txt";
-    $a->description = "AbuseIPDB blacklist (managed by os-abuseipdb plugin)";
+    $a->description = "AbuseIPDB blacklist (populated by os-abuseipdb plugin)";
     $errs = $alias_mdl->performValidation();
     if (count($errs) > 0) {
         foreach ($errs as $e) echo "alias validation: " . $e->getMessage() . "\n";

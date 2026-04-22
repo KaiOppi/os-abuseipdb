@@ -17,7 +17,7 @@ STATE_DIR = "/var/db/abuseipdb"
 STATE_DB = os.path.join(STATE_DIR, "state.sqlite")
 BLOCKLIST_FILE = os.path.join(STATE_DIR, "blocklist.txt")
 LOG_FILE = os.path.join(STATE_DIR, "abuseipdb.log")
-PF_TABLE = "os_abuseipdb"
+PF_TABLE = "abuseipdb_blacklist"
 
 API_BASE = "https://api.abuseipdb.com/api/v2"
 
