@@ -1,8 +1,9 @@
 <?php
 /*
- * Create/update the abuseipdb_blacklist alias and a WAN block rule via the
- * official OPNsense MVC model API — this ensures validation runs and the
- * config is persisted the way the GUI would persist it.
+ * Ensure firewall alias + WAN block rule for os-abuseipdb exist.
+ * Alias goes into the modern OPNsense\Firewall\Alias model,
+ * the block rule goes into the classic <filter><rule> list so it shows up
+ * in the traditional "Firewall → Rules → WAN" tab where admins edit rules.
  *
  * Copyright (c) 2026 Kai Schlestein
  * BSD 2-Clause.
@@ -13,7 +14,6 @@ require_once("util.inc");
 
 use OPNsense\Core\Config;
 use OPNsense\Firewall\Alias;
-use OPNsense\Firewall\Filter;
 use OPNsense\Abuseipdb\Abuseipdb;
 
 $pluginCfg = new Abuseipdb();
@@ -21,10 +21,11 @@ $plugin_enabled = (string)$pluginCfg->general->enabled === "1";
 $blacklist_on = (string)$pluginCfg->blacklist->enabled === "1";
 
 $alias_name = "abuseipdb_blacklist";
-$rule_marker = "os-abuseipdb block rule";
-$dirty = false;
+$rule_marker = "[os-abuseipdb] block AbuseIPDB known attackers";
 
-// --- Alias ---
+$dirty_model = false;
+
+// --- Alias (modern model) ---
 $alias_mdl = new Alias();
 $existing_alias = null;
 foreach ($alias_mdl->aliases->alias->iterateItems() as $uuid => $a) {
@@ -41,17 +42,16 @@ if ($plugin_enabled && $blacklist_on && $existing_alias === null) {
     $a->type = "urltable";
     $a->proto = "IPv4";
     $a->counters = "1";
-    $a->updatefreq = "0.04167"; // ~ 1h
+    $a->updatefreq = "0.04167";
     $a->content = "file:///var/db/abuseipdb/blocklist.txt";
     $a->description = "AbuseIPDB blacklist (managed by os-abuseipdb plugin)";
-
     $errs = $alias_mdl->performValidation();
     if (count($errs) > 0) {
-        foreach ($errs as $e) echo "alias validation error: " . $e->getMessage() . "\n";
+        foreach ($errs as $e) echo "alias validation: " . $e->getMessage() . "\n";
         exit(1);
     }
     $alias_mdl->serializeToConfig();
-    $dirty = true;
+    $dirty_model = true;
     echo "alias $alias_name created\n";
 } else if ($existing_alias !== null) {
     echo "alias $alias_name exists\n";
@@ -59,61 +59,65 @@ if ($plugin_enabled && $blacklist_on && $existing_alias === null) {
     echo "alias skipped (plugin/blacklist disabled)\n";
 }
 
-// --- Filter rule on WAN ---
-$filter_mdl = new Filter();
-$existing_rule = null;
-foreach ($filter_mdl->rules->rule->iterateItems() as $uuid => $r) {
-    if ((string)$r->description === $rule_marker) {
-        $existing_rule = $r;
+// --- Block rule (classic <filter><rule>) ---
+global $config;
+if (!isset($config["filter"])) $config["filter"] = [];
+if (!isset($config["filter"]["rule"]) || !is_array($config["filter"]["rule"])) {
+    $config["filter"]["rule"] = [];
+}
+
+$rule_idx = null;
+foreach ($config["filter"]["rule"] as $i => $r) {
+    if (is_array($r) && (($r["descr"] ?? "") === $rule_marker)) {
+        $rule_idx = $i;
         break;
     }
 }
 
-if ($plugin_enabled && $blacklist_on) {
-    if ($existing_rule === null) {
-        $r = $filter_mdl->rules->rule->Add();
-        $r->enabled = "1";
-        $r->sequence = "1";
-        $r->action = "block";
-        $r->quick = "1";
-        $r->interface = "wan";
-        $r->direction = "in";
-        $r->ipprotocol = "inet";
-        $r->protocol = "any";
-        $r->source_net = $alias_name;
-        $r->destination_net = "any";
-        $r->description = $rule_marker;
-        $r->log = "1";
+$dirty_classic = false;
 
-        $errs = $filter_mdl->performValidation();
-        if (count($errs) > 0) {
-            foreach ($errs as $e) echo "rule validation error: " . $e->getMessage() . "\n";
-            exit(1);
-        }
-        $filter_mdl->serializeToConfig();
-        $dirty = true;
-        echo "WAN block rule created\n";
+if ($plugin_enabled && $blacklist_on) {
+    $rule = [
+        "type"       => "block",
+        "interface"  => "wan",
+        "ipprotocol" => "inet",
+        "statetype"  => "keep state",
+        "direction"  => "in",
+        "quick"      => "1",
+        "log"        => "1",
+        "descr"      => $rule_marker,
+        "source"     => ["network" => $alias_name],
+        "destination"=> ["any" => "1"],
+        "protocol"   => "any",
+        "created"    => ["username" => "os-abuseipdb", "time" => time()],
+        "updated"    => ["username" => "os-abuseipdb", "time" => time()],
+    ];
+    if ($rule_idx === null) {
+        // Put it near the top so it blocks before any user pass rule on WAN
+        array_unshift($config["filter"]["rule"], $rule);
+        $dirty_classic = true;
+        echo "WAN block rule inserted at top of user rules\n";
     } else {
-        if ((string)$existing_rule->enabled !== "1") {
-            $existing_rule->enabled = "1";
-            $filter_mdl->serializeToConfig();
-            $dirty = true;
+        // already present — ensure it isn't disabled
+        if (!empty($config["filter"]["rule"][$rule_idx]["disabled"])) {
+            unset($config["filter"]["rule"][$rule_idx]["disabled"]);
+            $dirty_classic = true;
             echo "WAN block rule re-enabled\n";
         } else {
             echo "WAN block rule exists\n";
         }
     }
-} else if ($existing_rule !== null) {
-    if ((string)$existing_rule->enabled !== "0") {
-        $existing_rule->enabled = "0";
-        $filter_mdl->serializeToConfig();
-        $dirty = true;
+} else if ($rule_idx !== null) {
+    // plugin disabled → mark rule as disabled (don't delete — user may want to keep)
+    if (empty($config["filter"]["rule"][$rule_idx]["disabled"])) {
+        $config["filter"]["rule"][$rule_idx]["disabled"] = "1";
+        $dirty_classic = true;
         echo "WAN block rule disabled\n";
     }
 }
 
-if ($dirty) {
-    Config::getInstance()->save();
+if ($dirty_model || $dirty_classic) {
+    write_config("os-abuseipdb: alias + user WAN rule");
     echo "config saved\n";
 } else {
     echo "no changes\n";
