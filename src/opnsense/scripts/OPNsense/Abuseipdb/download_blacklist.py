@@ -2,7 +2,7 @@
 """
 Download the AbuseIPDB blacklist into a pf table.
 
-Copyright (c) 2026 Kai Voss / IT-Service NF
+Copyright (c) 2026 Kai Schlestein
 BSD 2-Clause.
 
 Phase-1 stub: loads config, fetches blacklist (optional), writes table file.

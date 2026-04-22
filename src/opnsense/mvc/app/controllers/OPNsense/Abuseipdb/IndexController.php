@@ -1,7 +1,7 @@
 <?php
 
 /*
- * Copyright (C) 2026 Kai Voss / IT-Service NF
+ * Copyright (C) 2026 Kai Schlestein
  * All rights reserved. BSD 2-Clause.
  */
 

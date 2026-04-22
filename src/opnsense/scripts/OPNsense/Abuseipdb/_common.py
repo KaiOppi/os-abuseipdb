@@ -2,7 +2,7 @@
 """
 Shared helpers for os-abuseipdb scripts.
 
-Copyright (c) 2026 Kai Voss / IT-Service NF
+Copyright (c) 2026 Kai Schlestein
 BSD 2-Clause.
 """
 import json

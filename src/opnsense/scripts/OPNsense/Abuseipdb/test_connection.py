@@ -2,7 +2,7 @@
 """
 Verify AbuseIPDB API key and connectivity.
 
-Copyright (c) 2026 Kai Voss / IT-Service NF
+Copyright (c) 2026 Kai Schlestein
 BSD 2-Clause.
 """
 import sys

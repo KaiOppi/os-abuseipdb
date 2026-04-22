@@ -2,7 +2,7 @@
 """
 Phase-1 stub — reporter will be implemented in phase 5.
 
-Copyright (c) 2026 Kai Voss / IT-Service NF
+Copyright (c) 2026 Kai Schlestein
 BSD 2-Clause.
 """
 import sys

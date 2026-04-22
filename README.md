@@ -36,4 +36,4 @@ BSD 2-Clause — siehe [LICENSE](LICENSE).
 
 ## Maintainer
 
-IT-Service NF · Kai Voss · info@it-service-nf.de
+Kai Schlestein · info@it-service-nf.de
