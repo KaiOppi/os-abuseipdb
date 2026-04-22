@@ -56,4 +56,17 @@ class ServiceController extends ApiMutableServiceControllerBase
         }
         return ['status' => 'ok', 'data' => $data];
     }
+
+    /**
+     * Trigger firewall alias + block rule setup. Called after settings save.
+     */
+    public function setupAction()
+    {
+        if ($this->request->isPost()) {
+            $backend = new Backend();
+            $output = trim($backend->configdRun('abuseipdb setup'));
+            return ['status' => 'ok', 'output' => $output];
+        }
+        return ['status' => 'failed', 'message' => 'POST required'];
+    }
 }

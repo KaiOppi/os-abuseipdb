@@ -13,7 +13,7 @@
             updateServiceControlUI('abuseipdb');
         });
 
-        // Save all three tabs sequentially — saveFormToEndpoint handles one form at a time.
+        // Save all three tabs sequentially, then trigger firewall setup.
         function saveAll() {
             saveFormToEndpoint(
                 url = "/api/abuseipdb/settings/set",
@@ -27,8 +27,16 @@
                                 url = "/api/abuseipdb/settings/set",
                                 formid = 'frm_reporter',
                                 callback_ok = function(){
-                                    $("#responseMsg").removeClass("hidden").html(
-                                        "{{ lang._('Configuration saved.') }}"
+                                    // now apply firewall changes
+                                    ajaxCall(
+                                        url = "/api/abuseipdb/service/setup",
+                                        sendData = {},
+                                        callback = function(resp){
+                                            var out = (resp && resp.output) ? resp.output : "";
+                                            $("#responseMsg").removeClass("hidden").html(
+                                                "{{ lang._('Saved and firewall updated:') }}<br><pre>" + out + "</pre>"
+                                            );
+                                        }
                                     );
                                 }
                             );
