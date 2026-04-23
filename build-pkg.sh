@@ -5,7 +5,7 @@
 set -eu
 
 NAME=os-abuseipdb
-VERSION=0.1.1
+VERSION=0.1.2
 ARCH=FreeBSD:14:amd64
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
@@ -70,7 +70,6 @@ prefix: /usr/local
 licenselogic: single
 licenses: [BSD2CLAUSE]
 categories: [security, sysutils]
-deps: { py311-requests: { origin: "www/py-requests", version: "0" } }
 EOF
 
 # Post-install: make sure our scripts are executable and state dir exists
@@ -81,6 +80,17 @@ chmod 755 /var/db/abuseipdb
 chmod +x /usr/local/opnsense/scripts/OPNsense/Abuseipdb/*.py \
          /usr/local/opnsense/scripts/OPNsense/Abuseipdb/*.sh \
          /usr/local/etc/rc.syshook.d/start/20-abuseipdb 2>/dev/null || true
+
+# Check that the Python "requests" library is importable. This works regardless
+# of the Python version (py311-, py313-, ...). If missing, print a hint.
+if ! /usr/local/bin/python3 -c "import requests" >/dev/null 2>&1; then
+    PYV=$(/usr/local/bin/python3 -c 'import sys;print(f"{sys.version_info[0]}{sys.version_info[1]}")')
+    echo
+    echo "!! Python 'requests' library is missing."
+    echo "!! Install it manually:  pkg install -y py${PYV}-requests"
+    echo
+fi
+
 service configd restart 2>/dev/null || true
 EOF
 
