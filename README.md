@@ -1,130 +1,133 @@
 # os-abuseipdb — OPNsense AbuseIPDB Integration
 
-OPNsense-Plugin für bidirektionale Integration mit [AbuseIPDB](https://www.abuseipdb.com):
+OPNsense plugin for bidirectional [AbuseIPDB](https://www.abuseipdb.com) integration:
 
-- **Blacklist** — lädt die AbuseIPDB-Blocklist in eine pf-Table und legt Firewall-Alias + WAN-Block-Regel automatisch an.
-- **Reporter** — parst das OPNsense-Firewall-Log und meldet Angreifer-IPs an AbuseIPDB zurück (bidirektionale Teilnahme am Threat-Intelligence-Netzwerk).
-- **Dashboard-Widget** — Live-Stats (Blocklist-Größe, letzter Download, Quota, Reports).
-- **Fire & Forget** — Cron-Jobs werden beim Enablen automatisch angelegt (Download täglich, Reporter alle 5 Min).
+- **Blacklist** — downloads the AbuseIPDB blocklist into a pf table and auto-creates a firewall alias + WAN block rule.
+- **Reporter** — parses the OPNsense firewall log and submits attacker IPs back to AbuseIPDB (bidirectional participation in the threat-intelligence network).
+- **Dashboard widget** — live stats (blocklist size, last download, quota, reports).
+- **Fire & forget** — cron jobs are created automatically when you enable the feature (daily download, 5-minute reporter cycles).
 
 ## Installation
 
-In der OPNsense-Shell (Console → Option 8):
+In the OPNsense shell (Console → option 8):
 
 ```sh
-# 1. Python-Abhängigkeit installieren — der Paketname hängt von der Python-Version
-#    auf deiner OPNsense ab: 26.1.x LTS nutzt py311, aktuellere Builds py313.
-#    Prüfe mit: python3 -c 'import sys;print(f"py{sys.version_info[0]}{sys.version_info[1]}-requests")'
-pkg install -y py313-requests   # für Python 3.13 (OPNsense 26.1.5+)
-# pkg install -y py311-requests # für ältere 26.1.x
+# 1. Install the Python dependency. The package name depends on the Python
+#    version on your OPNsense: 26.1 LTS uses py311, newer builds py313.
+#    Check with: python3 -c 'import sys;print(f"py{sys.version_info[0]}{sys.version_info[1]}-requests")'
+pkg install -y py313-requests   # for Python 3.13 (OPNsense 26.1.5+)
+# pkg install -y py311-requests # for older 26.1.x
 
-# 2. Plugin installieren
+# 2. Install the plugin
 pkg add https://github.com/KaiOppi/os-abuseipdb/releases/download/v0.1.11/os-abuseipdb-0.1.11.pkg
 
-# 3. configd neu laden, damit die neuen Actions sichtbar werden
+# 3. Reload configd so the new actions become visible
 service configd restart
 ```
 
-Dann in der WebGUI einmal aus- und wieder einloggen und zu **Firewall → AbuseIPDB** gehen.
+Log out and back in to the WebGUI, then go to **Firewall → AbuseIPDB**.
 
-## Konfiguration
+## Configuration
 
-### Allgemein
+### General
 
 1. Tab **General**
-   - `Plugin enabled` aktivieren
-   - `API Key` eintragen (80-stellig hex, Free-Tier bei [abuseipdb.com](https://www.abuseipdb.com/account/api))
-2. **Save** — der Button **Test connection** prüft den Key sofort.
+   - Tick `Plugin enabled`
+   - Paste your `API Key` (80-char hex, free tier at [abuseipdb.com](https://www.abuseipdb.com/account/api))
+2. **Save** — the **Test connection** button verifies the key immediately.
 
 ### Blacklist
 
-Tab **Blacklist** → aktivieren.
+Tab **Blacklist** → enable.
 
-Beim Save wird automatisch angelegt:
-- Firewall-Alias `abuseipdb_blacklist` (Type: *External*)
-- WAN-Block-Regel mit Source = diesem Alias, Log aktiv
-- Cron-Job: täglicher Download um 03:13
+On save the following is created automatically:
+- Firewall alias `abuseipdb_blacklist` (type *External*)
+- WAN block rule with source = the alias, logging enabled
+- Cron job: daily download at 03:13
 
-Standard-Werte (konfigurierbar):
-- `Minimum confidence score` — 90 (nur hochqualitative Einträge)
-- `Maximum number of IPs` — 10000 (Free-Tier-Limit pro Call)
+Default values (configurable):
+- `Minimum confidence score` — 90 (only high-quality hits)
+- `Maximum number of IPs` — 10000 (free-tier per-call limit)
+- `Block on interface(s)` — WAN. Select multiple interfaces for multi-WAN / failover groups; the rule becomes a floating rule on the selected interfaces.
 
 ### Reporter
 
-Tab **Reporter** → aktivieren.
+Tab **Reporter** → enable.
 
-Beim Save wird automatisch angelegt:
-- Cron-Job: Reporter-Lauf alle 5 Min (parst `/var/log/filter/latest.log`)
+On save the following is created automatically:
+- Cron job: reporter run every 5 minutes (parses `/var/log/filter/latest.log`)
 
-Standard-Werte:
-- `Minimum hits before report` — 3 (Dedupe gegen Rauschen)
-- `Rate limit per IP (min)` — 15 (max. ein Report pro IP pro Zeitraum)
-- `Daily report quota` — 900 (unter Free-Tier-Limit 1000)
+Default values:
+- `Dry-run` — **on**. Candidates are logged as "would report" but not actually submitted. Keep this on for 24h after enabling the reporter so you can verify the selected hits are real attack traffic.
+- `Pre-check IP against AbuseIPDB` — **on**. Before reporting, the candidate IP is looked up via `/api/v2/check` and skipped if nobody else has flagged it (`confidence < precheck_min_confidence`). Costs one API call per candidate, dramatically reduces false positives.
+- `Minimum hits before report` — 3 (dedupe against noise)
+- `Rate limit per IP (min)` — 15 (max one report per IP per window)
+- `Daily report quota` — 900 (below the free-tier 1000-per-day limit)
 - `Default categories` — `14,15` (PortScan + Hacking)
 
-> **Hinweis:** IPs, die durch die Plugin-eigene Blacklist-Regel geblockt werden, werden **nicht** gemeldet (wäre Circular-Reporting).
+> **Note:** IPs blocked by the plugin's own blacklist rule are **not** reported back (that would be circular reporting).
 
-## Dashboard-Widget
+## Dashboard widget
 
-**Lobby → Dashboard → Add widget → "AbuseIPDB"** — zeigt Blocklist-Größe, letzter Download-Zeitpunkt, API-Quota, Reports-Count.
+**Lobby → Dashboard → Add widget → "AbuseIPDB"** — shows blocklist size, last download time, API quota, reports-today/total.
 
-## Verifikation
+## Verification
 
 ```sh
-# Blocklist in pf-Table
+# Blocklist in pf table
 pfctl -t abuseipdb_blacklist -T show | wc -l
 
-# Stats als JSON
+# Stats as JSON
 configctl abuseipdb stats
 
-# Manueller Download (verbraucht 1 API-Call)
+# Manual download (costs one API call)
 configctl abuseipdb download
 
-# Reporter manuell triggern
+# Trigger reporter manually
 configctl abuseipdb report
 ```
 
-## Deinstallation
+## Uninstall
 
 ```sh
 pkg remove os-abuseipdb
 ```
 
-- Firewall-Alias und Block-Regel **bleiben erhalten** (du kannst sie manuell löschen falls gewünscht).
-- State-Verzeichnis `/var/db/abuseipdb/` bleibt erhalten (enthält Report-Historie in SQLite).
+- The firewall alias and block rule **stay in place** (remove them manually if you want to).
+- The state directory `/var/db/abuseipdb/` stays (holds report history in SQLite).
 
-## Voraussetzungen
+## Requirements
 
-- OPNsense 26.1 oder neuer
-- `py311-requests` (muss vor dem `pkg add` installiert sein — siehe [Installation](#installation))
-- AbuseIPDB-API-Key (Free-Tier reicht für ein Einzelsystem)
+- OPNsense 26.1 or newer
+- `py311-requests` or `py313-requests` (must be installed before `pkg add` — see [Installation](#installation))
+- AbuseIPDB API key (free tier is enough for a single system)
 
-## Status / Roadmap
+## Roadmap
 
 **Done:**
-- [x] Plugin-Grundgerüst + GUI
-- [x] Blacklist-Downloader
-- [x] Auto-Setup von Alias + Block-Rule (Multi-Interface, Floating)
-- [x] Reporter (Firewall-Log → AbuseIPDB) mit Dry-Run, Pre-Check, Noise-Filter
-- [x] Cron-Integration (Download + Reporter)
-- [x] Dashboard-Widget
-- [x] Report-Log-Viewer im Plugin + Refresh-Button
-- [x] Quick-Jump-Nav zu Alias / Rule / Cron / Log
-- [x] FreeBSD-Paket + GitHub-Release
+- [x] Plugin scaffolding + GUI
+- [x] Blacklist downloader
+- [x] Auto-setup of alias + block rule (multi-interface, floating)
+- [x] Reporter (firewall log → AbuseIPDB) with dry-run, pre-check, noise filter
+- [x] Cron integration (download + reporter)
+- [x] Dashboard widget
+- [x] Report log viewer in the plugin + refresh button
+- [x] Quick-jump navigation to alias / rule / cron / log
+- [x] FreeBSD pkg + GitHub release
 
-**Offen:**
-- [ ] Rule-zu-Kategorie-Mapping-UI (derzeit nur default-Kategorien)
-- [ ] IPv6-Support im Reporter (aktuell IPv4 only)
-- [ ] Deutsche Übersetzung (vertagt auf Community-Crowdin-Workflow)
+**Open:**
+- [ ] Rule-to-category mapping UI (currently default categories only)
+- [ ] IPv6 support in the reporter (currently IPv4 only)
+- [ ] German translation (deferred to the Community Crowdin workflow)
 
-**Spätere Erweiterungen (Post-1.0):**
-- [ ] **Service-Log-Integration** — Angriffe auf lokale Dienste (Postfix, sshd, Web-GUI-Bruteforce, FTP) via Service-Log-Parser erkennen und melden, nicht nur Firewall-Blocks. Optional mit Auto-Ban (pf-Table) sodass Angreifer gleichzeitig geblockt + gemeldet werden.
-- [ ] Suricata / Zenarmor Integration (Alert-Events als Reporting-Quelle)
-- [ ] GeoIP-Anreicherung im Log-Viewer (ASN/Country je IP)
+**Later / post-1.0:**
+- [ ] **Service-log integration** — catch attacks against local services (Postfix, sshd, WebGUI brute-force, FTP) by parsing their logs, not just firewall blocks. Optional auto-ban into the pf table so attackers are blocked and reported in one step.
+- [ ] Suricata / Zenarmor integration (alert events as reporting source)
+- [ ] GeoIP enrichment in the log viewer (ASN/country per IP)
 
-## Lizenz
+## License
 
-BSD 2-Clause — siehe [LICENSE](LICENSE).
+BSD 2-Clause — see [LICENSE](LICENSE).
 
 ## Maintainer
 
