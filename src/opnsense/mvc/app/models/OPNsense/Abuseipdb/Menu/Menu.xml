@@ -1,6 +1,5 @@
-<?xml version="1.0"?>
 <menu>
     <Firewall>
-        <AbuseIPDB VisibleName="AbuseIPDB" order="900" url="/ui/abuseipdb/"/>
+        <AbuseIPDB VisibleName="AbuseIPDB" cssClass="fa fa-shield fa-fw" order="900" url="/ui/abuseipdb/"/>
     </Firewall>
 </menu>
