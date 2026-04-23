@@ -99,6 +99,22 @@ foreach ($config["filter"]["rule"] as $i => $r) {
 
 $dirty_classic = false;
 
+// If interface selection changed (single↔floating or list changed), rebuild
+// the rule from scratch instead of trying to patch it. OPNsense drops the
+// rule when transitioning from floating to per-interface by mutating fields
+// in place, so the safe approach is to delete and re-create.
+if ($rule_idx !== null && $plugin_enabled && $blacklist_on) {
+    $cur_if = $config["filter"]["rule"][$rule_idx]["interface"] ?? "";
+    $cur_floating = !empty($config["filter"]["rule"][$rule_idx]["floating"]);
+    $need_floating = $is_floating;
+    if ($cur_if !== $block_ifs_csv || $cur_floating !== $need_floating) {
+        array_splice($config["filter"]["rule"], $rule_idx, 1);
+        $rule_idx = null;
+        $dirty_classic = true;
+        echo "block rule: deleted (interface selection changed) — will recreate\n";
+    }
+}
+
 if ($plugin_enabled && $blacklist_on) {
     // NOTE: leave "protocol" UNSET. Writing <protocol>any</protocol> makes the
     // OPNsense rule generator emit "proto any" which pf rejects in combination
@@ -144,17 +160,6 @@ if ($plugin_enabled && $blacklist_on) {
             unset($config["filter"]["rule"][$rule_idx]["protocol"]);
             $dirty_classic = true;
             echo "block rule: protocol field removed (was causing 'proto any' syntax error)\n";
-        }
-        // Sync interface list in case the admin changed selection in the GUI
-        if (($config["filter"]["rule"][$rule_idx]["interface"] ?? "") !== $block_ifs_csv) {
-            $config["filter"]["rule"][$rule_idx]["interface"] = $block_ifs_csv;
-            if ($is_floating) {
-                $config["filter"]["rule"][$rule_idx]["floating"] = "yes";
-            } else {
-                unset($config["filter"]["rule"][$rule_idx]["floating"]);
-            }
-            $dirty_classic = true;
-            echo "block rule: interfaces updated to '$block_ifs_csv'" . ($is_floating ? " (floating)" : "") . "\n";
         }
         if (!$dirty_classic) {
             echo "block rule exists\n";
