@@ -198,7 +198,9 @@ if ($dirty_model || $dirty_cron) {
     echo "model config saved\n";
 }
 if ($dirty_cron) {
-    shell_exec("/usr/local/sbin/configctl cron reload");
+    // Correct action name is 'restart' (not 'reload') — regenerates
+    // /var/cron/tabs/nobody from the cron template and restarts the daemon.
+    shell_exec("/usr/local/sbin/configctl cron restart");
 }
 if (!$dirty_model && !$dirty_classic && !$dirty_cron) {
     echo "no changes\n";
