@@ -79,9 +79,18 @@
 
         mapDataToFormUI(data_get_map).done(function(){
             updateServiceControlUI('abuseipdb');
-            // Fix the "Jump to: Block rule" link based on single-vs-floating
-            var selected = $("#abuseipdb\\.blacklist\\.block_interfaces").val() || [];
+            var $ifSel = $("#abuseipdb\\.blacklist\\.block_interfaces");
+            var selected = $ifSel.val() || [];
             if (typeof selected === "string") selected = selected ? [selected] : [];
+            // Fresh install: model default "wan" isn't applied to an empty
+            // multi-select on first render. Auto-select WAN if nothing is set yet.
+            if (selected.length === 0 && $ifSel.find("option[value='wan']").length) {
+                $ifSel.find("option[value='wan']").prop("selected", true);
+                if ($ifSel.hasClass("selectpicker")) {
+                    $ifSel.selectpicker("refresh");
+                }
+                selected = ["wan"];
+            }
             $("#jumpToRule").attr("href",
                 selected.length > 1 ? "/ui/firewall/filter#floating"
                                     : "/ui/firewall/filter#" + (selected[0] || "wan"));
