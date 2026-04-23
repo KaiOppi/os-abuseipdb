@@ -18,9 +18,10 @@
         <help>Upper limit on IPs pulled per run. Free-tier supports 10,000.</help>
     </field>
     <field>
-        <id>abuseipdb.blacklist.schedule</id>
-        <label>Update schedule (cron)</label>
-        <type>text</type>
-        <help>Cron expression, e.g. "0 3 * * *" = daily at 03:00.</help>
+        <id>abuseipdb.blacklist.block_interfaces</id>
+        <label>Block on interface(s)</label>
+        <type>select_multiple</type>
+        <style>selectpicker</style>
+        <help>Interfaces where the block rule is active. Select multiple for multi-WAN / failover (e.g. WAN + WAN2). A single floating rule is created on the selected interfaces. Default: WAN.</help>
     </field>
 </form>

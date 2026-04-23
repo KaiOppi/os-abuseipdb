@@ -53,20 +53,21 @@
                 var tbody = $("#reportsTable tbody").empty();
                 if (rows.length === 0) {
                     tbody.append('<tr><td colspan="5" style="text-align:center;color:#888;padding:12px">{{ lang._("No reports yet.") }}</td></tr>');
-                    return;
+                } else {
+                    rows.forEach(function(r) {
+                        var cls = r.ok ? 'ok' : 'warn';
+                        tbody.append(
+                            '<tr>' +
+                            '<td>' + fmtTs(r.ts) + '</td>' +
+                            '<td><tt>' + r.ip + '</tt></td>' +
+                            '<td>' + r.categories + '</td>' +
+                            '<td class="' + cls + '">' + (r.ok ? 'OK' : 'failed') + '</td>' +
+                            '<td>' + $('<div>').text(r.message).html() + '</td>' +
+                            '</tr>'
+                        );
+                    });
                 }
-                rows.forEach(function(r) {
-                    var cls = r.ok ? 'ok' : 'warn';
-                    tbody.append(
-                        '<tr>' +
-                        '<td>' + fmtTs(r.ts) + '</td>' +
-                        '<td><tt>' + r.ip + '</tt></td>' +
-                        '<td>' + r.categories + '</td>' +
-                        '<td class="' + cls + '">' + (r.ok ? 'OK' : 'failed') + '</td>' +
-                        '<td>' + $('<div>').text(r.message).html() + '</td>' +
-                        '</tr>'
-                    );
-                });
+                $("#reportsLastFetch").text("{{ lang._('last fetched:') }} " + new Date().toLocaleTimeString());
             }
         );
     }
@@ -141,6 +142,7 @@
         $('a[data-toggle="tab"]').on('shown.bs.tab', function(e) {
             if ($(e.target).attr('href') === '#logtab') refreshReports();
         });
+        $("#refreshReportsAct").click(refreshReports);
 
         refreshStats();
         setInterval(refreshStats, 30000);
@@ -191,6 +193,12 @@
         {{ partial("layout_partials/base_form", ['fields': reporterForm, 'id': 'frm_reporter']) }}
     </div>
     <div id="logtab" class="tab-pane fade" style="padding:10px">
+        <div style="margin-bottom:8px">
+            <button class="btn btn-default btn-sm" id="refreshReportsAct">
+                <span class="fa fa-refresh"></span> {{ lang._('Refresh') }}
+            </button>
+            <span id="reportsLastFetch" style="color:#666;font-size:11px;margin-left:10px"></span>
+        </div>
         <table id="reportsTable">
             <thead>
                 <tr>

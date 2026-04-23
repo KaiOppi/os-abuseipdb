@@ -31,6 +31,11 @@
                 <default>10000</default>
                 <Required>Y</Required>
             </max_ips>
+            <block_interfaces type="InterfaceField">
+                <Multiple>Y</Multiple>
+                <default>wan</default>
+                <ValidationMessage>At least one interface must be selected for the block rule.</ValidationMessage>
+            </block_interfaces>
         </blacklist>
         <reporter>
             <enabled type="BooleanField">

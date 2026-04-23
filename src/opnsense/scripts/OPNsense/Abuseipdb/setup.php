@@ -34,6 +34,15 @@ $plugin_enabled = (string)$pluginCfg->general->enabled === "1";
 $blacklist_on = (string)$pluginCfg->blacklist->enabled === "1";
 $reporter_on = (string)$pluginCfg->reporter->enabled === "1";
 
+// Interface list for the block rule; default WAN. Filter invalids and uniq.
+$block_ifs_raw = (string)$pluginCfg->blacklist->block_interfaces;
+$block_ifs = array_filter(array_map("trim", explode(",", $block_ifs_raw)));
+if (empty($block_ifs)) {
+    $block_ifs = ["wan"];
+}
+$block_ifs_csv = implode(",", $block_ifs);
+$is_floating = count($block_ifs) > 1;
+
 $alias_name = "abuseipdb_blacklist";
 $rule_marker = "[os-abuseipdb] block AbuseIPDB known attackers";
 
@@ -97,7 +106,7 @@ if ($plugin_enabled && $blacklist_on) {
     // produces the classic pfSense-style rule without "proto".
     $rule = [
         "type"           => "block",
-        "interface"      => "wan",
+        "interface"      => $block_ifs_csv,
         "ipprotocol"     => "inet",
         "statetype"      => "keep state",
         "direction"      => "in",
@@ -110,6 +119,9 @@ if ($plugin_enabled && $blacklist_on) {
         "created"        => ["username" => "os-abuseipdb", "time" => time()],
         "updated"        => ["username" => "os-abuseipdb", "time" => time()],
     ];
+    if ($is_floating) {
+        $rule["floating"] = "yes";
+    }
     if ($rule_idx === null) {
         // Put it near the top so it blocks before any user pass rule on WAN
         array_unshift($config["filter"]["rule"], $rule);
@@ -131,10 +143,21 @@ if ($plugin_enabled && $blacklist_on) {
             // "proto any" + destination macro "{any}" = pf syntax error; drop the field.
             unset($config["filter"]["rule"][$rule_idx]["protocol"]);
             $dirty_classic = true;
-            echo "WAN block rule: protocol field removed (was causing 'proto any' syntax error)\n";
+            echo "block rule: protocol field removed (was causing 'proto any' syntax error)\n";
+        }
+        // Sync interface list in case the admin changed selection in the GUI
+        if (($config["filter"]["rule"][$rule_idx]["interface"] ?? "") !== $block_ifs_csv) {
+            $config["filter"]["rule"][$rule_idx]["interface"] = $block_ifs_csv;
+            if ($is_floating) {
+                $config["filter"]["rule"][$rule_idx]["floating"] = "yes";
+            } else {
+                unset($config["filter"]["rule"][$rule_idx]["floating"]);
+            }
+            $dirty_classic = true;
+            echo "block rule: interfaces updated to '$block_ifs_csv'" . ($is_floating ? " (floating)" : "") . "\n";
         }
         if (!$dirty_classic) {
-            echo "WAN block rule exists\n";
+            echo "block rule exists\n";
         }
     }
 } else if ($rule_idx !== null) {
