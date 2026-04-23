@@ -12,10 +12,22 @@
 require_once("config.inc");
 require_once("util.inc");
 
+use OPNsense\Core\ACL;
 use OPNsense\Core\Config;
 use OPNsense\Firewall\Alias;
 use OPNsense\Cron\Cron;
 use OPNsense\Abuseipdb\Abuseipdb;
+
+// Make sure the ACL cache picks up our page-firewall-abuseipdb privilege.
+// Without this, fresh installs don't show the menu entry or the privilege
+// in Access → Users until some unrelated event triggers a rebuild.
+try {
+    $acl = new ACL();
+    $acl->invalidateCache();
+    $acl->persist(false);
+} catch (\Throwable $e) {
+    // non-fatal
+}
 
 $pluginCfg = new Abuseipdb();
 $plugin_enabled = (string)$pluginCfg->general->enabled === "1";
