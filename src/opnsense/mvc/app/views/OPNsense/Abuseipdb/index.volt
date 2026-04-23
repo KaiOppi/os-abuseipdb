@@ -181,17 +181,17 @@
     </table>
     <div style="margin-top:8px">
         <b>{{ lang._('Jump to:') }}</b>
-        <a href="/ui/firewall/alias#abuseipdb_blacklist" class="btn btn-default btn-xs" target="_blank">
-            <span class="fa fa-external-link"></span> {{ lang._('Alias') }}
+        <a href="/ui/firewall/alias#abuseipdb_blacklist" class="btn btn-default btn-xs">
+            <span class="fa fa-arrow-right"></span> {{ lang._('Alias') }}
         </a>
-        <a id="jumpToRule" href="/ui/firewall/filter" class="btn btn-default btn-xs" target="_blank">
-            <span class="fa fa-external-link"></span> {{ lang._('Block rule') }}
+        <a id="jumpToRule" href="/ui/firewall/filter" class="btn btn-default btn-xs">
+            <span class="fa fa-arrow-right"></span> {{ lang._('Block rule') }}
         </a>
-        <a href="/ui/cron" class="btn btn-default btn-xs" target="_blank">
-            <span class="fa fa-external-link"></span> {{ lang._('Cron jobs') }}
+        <a href="/ui/cron" class="btn btn-default btn-xs">
+            <span class="fa fa-arrow-right"></span> {{ lang._('Cron jobs') }}
         </a>
-        <a href="/ui/diagnostics/log/core/filter" class="btn btn-default btn-xs" target="_blank">
-            <span class="fa fa-external-link"></span> {{ lang._('Firewall log') }}
+        <a href="/ui/diagnostics/log/core/filter" class="btn btn-default btn-xs">
+            <span class="fa fa-arrow-right"></span> {{ lang._('Firewall log') }}
         </a>
     </div>
 </div>
