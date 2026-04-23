@@ -101,17 +101,26 @@ pkg remove os-abuseipdb
 
 ## Status / Roadmap
 
+**Done:**
 - [x] Plugin-Grundgerüst + GUI
 - [x] Blacklist-Downloader
-- [x] Auto-Setup von Alias + Block-Rule
-- [x] Reporter (Log → AbuseIPDB)
+- [x] Auto-Setup von Alias + Block-Rule (Multi-Interface, Floating)
+- [x] Reporter (Firewall-Log → AbuseIPDB) mit Dry-Run, Pre-Check, Noise-Filter
 - [x] Cron-Integration (Download + Reporter)
 - [x] Dashboard-Widget
-- [x] Report-Log-Viewer im Plugin
+- [x] Report-Log-Viewer im Plugin + Refresh-Button
+- [x] Quick-Jump-Nav zu Alias / Rule / Cron / Log
 - [x] FreeBSD-Paket + GitHub-Release
-- [ ] Deutsche Übersetzung (vertagt auf Community-Crowdin-Workflow)
+
+**Offen:**
 - [ ] Rule-zu-Kategorie-Mapping-UI (derzeit nur default-Kategorien)
-- [ ] IPv6-Support (aktuell IPv4 only im Reporter)
+- [ ] IPv6-Support im Reporter (aktuell IPv4 only)
+- [ ] Deutsche Übersetzung (vertagt auf Community-Crowdin-Workflow)
+
+**Spätere Erweiterungen (Post-1.0):**
+- [ ] **Service-Log-Integration** — Angriffe auf lokale Dienste (Postfix, sshd, Web-GUI-Bruteforce, FTP) via Service-Log-Parser erkennen und melden, nicht nur Firewall-Blocks. Optional mit Auto-Ban (pf-Table) sodass Angreifer gleichzeitig geblockt + gemeldet werden.
+- [ ] Suricata / Zenarmor Integration (Alert-Events als Reporting-Quelle)
+- [ ] GeoIP-Anreicherung im Log-Viewer (ASN/Country je IP)
 
 ## Lizenz
 
