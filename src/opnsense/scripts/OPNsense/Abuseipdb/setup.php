@@ -79,6 +79,10 @@ foreach ($config["filter"]["rule"] as $i => $r) {
 $dirty_classic = false;
 
 if ($plugin_enabled && $blacklist_on) {
+    // NOTE: leave "protocol" UNSET. Writing <protocol>any</protocol> makes the
+    // OPNsense rule generator emit "proto any" which pf rejects in combination
+    // with the auto-generated "{any}" destination macro. Omitting the field
+    // produces the classic pfSense-style rule without "proto".
     $rule = [
         "type"           => "block",
         "interface"      => "wan",
@@ -87,11 +91,10 @@ if ($plugin_enabled && $blacklist_on) {
         "direction"      => "in",
         "quick"          => "1",
         "log"            => "1",
-        "disablereplyto" => "1",  // pf rejects reply-to on block rules (esp. on pppoe WAN)
+        "disablereplyto" => "1",
         "descr"          => $rule_marker,
         "source"         => ["network" => $alias_name],
         "destination"    => ["any" => "1"],
-        "protocol"       => "any",
         "created"        => ["username" => "os-abuseipdb", "time" => time()],
         "updated"        => ["username" => "os-abuseipdb", "time" => time()],
     ];
@@ -111,6 +114,12 @@ if ($plugin_enabled && $blacklist_on) {
             $config["filter"]["rule"][$rule_idx]["disablereplyto"] = "1";
             $dirty_classic = true;
             echo "WAN block rule: disablereplyto migrated\n";
+        }
+        if (isset($config["filter"]["rule"][$rule_idx]["protocol"])) {
+            // "proto any" + destination macro "{any}" = pf syntax error; drop the field.
+            unset($config["filter"]["rule"][$rule_idx]["protocol"]);
+            $dirty_classic = true;
+            echo "WAN block rule: protocol field removed (was causing 'proto any' syntax error)\n";
         }
         if (!$dirty_classic) {
             echo "WAN block rule exists\n";
