@@ -80,19 +80,20 @@ $dirty_classic = false;
 
 if ($plugin_enabled && $blacklist_on) {
     $rule = [
-        "type"       => "block",
-        "interface"  => "wan",
-        "ipprotocol" => "inet",
-        "statetype"  => "keep state",
-        "direction"  => "in",
-        "quick"      => "1",
-        "log"        => "1",
-        "descr"      => $rule_marker,
-        "source"     => ["network" => $alias_name],
-        "destination"=> ["any" => "1"],
-        "protocol"   => "any",
-        "created"    => ["username" => "os-abuseipdb", "time" => time()],
-        "updated"    => ["username" => "os-abuseipdb", "time" => time()],
+        "type"           => "block",
+        "interface"      => "wan",
+        "ipprotocol"     => "inet",
+        "statetype"      => "keep state",
+        "direction"      => "in",
+        "quick"          => "1",
+        "log"            => "1",
+        "disablereplyto" => "1",  // pf rejects reply-to on block rules (esp. on pppoe WAN)
+        "descr"          => $rule_marker,
+        "source"         => ["network" => $alias_name],
+        "destination"    => ["any" => "1"],
+        "protocol"       => "any",
+        "created"        => ["username" => "os-abuseipdb", "time" => time()],
+        "updated"        => ["username" => "os-abuseipdb", "time" => time()],
     ];
     if ($rule_idx === null) {
         // Put it near the top so it blocks before any user pass rule on WAN
@@ -100,12 +101,18 @@ if ($plugin_enabled && $blacklist_on) {
         $dirty_classic = true;
         echo "WAN block rule inserted at top of user rules\n";
     } else {
-        // already present — ensure it isn't disabled
+        // already present — ensure it isn't disabled and has disablereplyto
         if (!empty($config["filter"]["rule"][$rule_idx]["disabled"])) {
             unset($config["filter"]["rule"][$rule_idx]["disabled"]);
             $dirty_classic = true;
             echo "WAN block rule re-enabled\n";
-        } else {
+        }
+        if (empty($config["filter"]["rule"][$rule_idx]["disablereplyto"])) {
+            $config["filter"]["rule"][$rule_idx]["disablereplyto"] = "1";
+            $dirty_classic = true;
+            echo "WAN block rule: disablereplyto migrated\n";
+        }
+        if (!$dirty_classic) {
             echo "WAN block rule exists\n";
         }
     }
