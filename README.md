@@ -9,14 +9,20 @@ OPNsense-Plugin für bidirektionale Integration mit [AbuseIPDB](https://www.abus
 
 ## Installation
 
-Download des `.pkg` aus dem [neuesten Release](https://github.com/KaiOppi/os-abuseipdb/releases/latest) und auf der OPNsense installieren:
+In der OPNsense-Shell (Console → Option 8):
 
 ```sh
+# 1. Dependency (pkg add zieht Dependencies nicht automatisch nach)
+pkg install -y py311-requests
+
+# 2. Plugin installieren
 pkg add https://github.com/KaiOppi/os-abuseipdb/releases/download/v0.1.1/os-abuseipdb-0.1.1.pkg
+
+# 3. configd neu laden, damit die neuen Actions sichtbar werden
 service configd restart
 ```
 
-Dann in der WebGUI: **Firewall → AbuseIPDB** öffnen.
+Dann in der WebGUI einmal aus- und wieder einloggen und zu **Firewall → AbuseIPDB** gehen.
 
 ## Konfiguration
 
@@ -87,7 +93,7 @@ pkg remove os-abuseipdb
 ## Voraussetzungen
 
 - OPNsense 26.1 oder neuer
-- Python-Abhängigkeit `py311-requests` (wird per pkg-deps automatisch installiert)
+- `py311-requests` (muss vor dem `pkg add` installiert sein — siehe [Installation](#installation))
 - AbuseIPDB-API-Key (Free-Tier reicht für ein Einzelsystem)
 
 ## Status / Roadmap
