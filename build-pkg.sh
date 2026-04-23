@@ -5,7 +5,7 @@
 set -eu
 
 NAME=os-abuseipdb
-VERSION=0.1.2
+VERSION=0.1.3
 ARCH=FreeBSD:14:amd64
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
@@ -59,7 +59,7 @@ chmod +x "$STAGE/usr/local/opnsense/scripts/OPNsense/Abuseipdb/"*.py \
 cat > "$ROOT/work/+MANIFEST" <<EOF
 name: $NAME
 version: "$VERSION"
-origin: security/$NAME
+origin: opnsense/$NAME
 comment: "OPNsense plugin for bidirectional AbuseIPDB integration"
 desc: "AbuseIPDB blacklist downloader and reporter for OPNsense. Automatic pf-table population, firewall alias + WAN block rule, log-based reporter that submits firewall hits back to AbuseIPDB, dashboard widget, daily download and 5-min reporter cron."
 maintainer: info@it-service-nf.de
@@ -69,7 +69,19 @@ arch: $ARCH
 prefix: /usr/local
 licenselogic: single
 licenses: [BSD2CLAUSE]
-categories: [security, sysutils]
+categories: [security]
+annotations: {
+    FreeBSD_version: "1403000",
+    product_abi: "26.1",
+    product_arch: "amd64",
+    product_email: "info@it-service-nf.de",
+    product_id: "$NAME",
+    product_name: "abuseipdb",
+    product_tier: "3",
+    product_version: "$VERSION",
+    product_website: "https://github.com/KaiOppi/os-abuseipdb",
+    repository: "os-abuseipdb"
+}
 EOF
 
 # Post-install: make sure our scripts are executable and state dir exists
