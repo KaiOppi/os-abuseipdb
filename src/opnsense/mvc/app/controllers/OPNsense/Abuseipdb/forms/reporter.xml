@@ -6,6 +6,24 @@
         <help>Submit local firewall block events to AbuseIPDB. Requires a rule label to mark reportable events.</help>
     </field>
     <field>
+        <id>abuseipdb.reporter.dry_run</id>
+        <label>Dry-run (don't actually submit)</label>
+        <type>checkbox</type>
+        <help>When enabled, candidates are logged to the Log tab as 'would send' but no POST /report call is made. Recommended for 24h before going live, to verify that the selected hits are legitimate attack traffic.</help>
+    </field>
+    <field>
+        <id>abuseipdb.reporter.precheck</id>
+        <label>Pre-check IP against AbuseIPDB</label>
+        <type>checkbox</type>
+        <help>Before reporting, look the IP up via /api/v2/check and skip it if AbuseIPDB has no confidence score (nobody else has reported it). Dramatically reduces false positives on one-off scanners. Costs one API call per candidate.</help>
+    </field>
+    <field>
+        <id>abuseipdb.reporter.precheck_min_confidence</id>
+        <label>Pre-check minimum confidence</label>
+        <type>text</type>
+        <help>Only report if AbuseIPDB already shows at least this confidence score (0-100). 0 = report if IP is present at all; 25 = already considered suspicious by others; 50+ = only known-bad. Default 25.</help>
+    </field>
+    <field>
         <id>abuseipdb.reporter.min_hits</id>
         <label>Minimum hits before report</label>
         <type>text</type>

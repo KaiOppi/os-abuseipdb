@@ -19,7 +19,7 @@ pkg install -y py313-requests   # für Python 3.13 (OPNsense 26.1.5+)
 # pkg install -y py311-requests # für ältere 26.1.x
 
 # 2. Plugin installieren
-pkg add https://github.com/KaiOppi/os-abuseipdb/releases/download/v0.1.10/os-abuseipdb-0.1.10.pkg
+pkg add https://github.com/KaiOppi/os-abuseipdb/releases/download/v0.1.11/os-abuseipdb-0.1.11.pkg
 
 # 3. configd neu laden, damit die neuen Actions sichtbar werden
 service configd restart

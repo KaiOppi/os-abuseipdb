@@ -36,6 +36,9 @@ DEFAULT_CONFIG = {
         "rate_limit_per_ip_min": "15",
         "daily_quota": "900",
         "default_categories": "14,15",
+        "dry_run": "1",
+        "precheck": "1",
+        "precheck_min_confidence": "25",
     },
 }
 

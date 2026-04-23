@@ -66,6 +66,20 @@
                 <default>14,15</default>
                 <Required>Y</Required>
             </default_categories>
+            <dry_run type="BooleanField">
+                <default>1</default>
+                <Required>Y</Required>
+            </dry_run>
+            <precheck type="BooleanField">
+                <default>1</default>
+                <Required>Y</Required>
+            </precheck>
+            <precheck_min_confidence type="IntegerField">
+                <MinimumValue>0</MinimumValue>
+                <MaximumValue>100</MaximumValue>
+                <default>25</default>
+                <Required>Y</Required>
+            </precheck_min_confidence>
         </reporter>
     </items>
 </model>

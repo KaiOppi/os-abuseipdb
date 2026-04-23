@@ -41,11 +41,34 @@ META_SPLIT = re.compile(r"\[meta [^\]]*\]\s+")
 
 
 def is_private(ip_str: str) -> bool:
+    """True for any address that must never be reported (RFC1918, loopback,
+    multicast, broadcast, CGN, link-local, reserved, unparseable)."""
     try:
         ip = ipaddress.ip_address(ip_str)
-        return ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved
+        return (ip.is_private or ip.is_loopback or ip.is_link_local or
+                ip.is_multicast or ip.is_reserved or ip.is_unspecified or
+                str(ip) == "255.255.255.255")
     except ValueError:
-        return True  # unparseable = don't report
+        return True
+
+
+def check_abuseipdb(api_key: str, ip: str) -> tuple[int | None, str]:
+    """Ask AbuseIPDB what it knows about an IP. Returns (confidence, comment)."""
+    try:
+        r = requests.get(
+            f"{API_BASE}/check",
+            headers={"Key": api_key, "Accept": "application/json"},
+            params={"ipAddress": ip, "maxAgeInDays": 90},
+            timeout=10,
+        )
+        if r.status_code != 200:
+            return None, f"check http {r.status_code}"
+        data = r.json().get("data", {})
+        conf = data.get("abuseConfidenceScore")
+        return (int(conf) if conf is not None else 0,
+                f"{data.get('totalReports', 0)} reports")
+    except Exception as exc:
+        return None, f"check failed: {exc}"
 
 
 def parse_line(line: str):
@@ -177,6 +200,9 @@ def main() -> int:
     rate_min = int(cfg["reporter"]["rate_limit_per_ip_min"])
     daily_quota = int(cfg["reporter"]["daily_quota"])
     default_categories = cfg["reporter"]["default_categories"].strip() or "14,15"
+    dry_run = cfg["reporter"]["dry_run"] == "1"
+    precheck = cfg["reporter"]["precheck"] == "1"
+    precheck_min_conf = int(cfg["reporter"]["precheck_min_confidence"])
 
     lines = read_new_lines()
     if not lines:
@@ -223,10 +249,37 @@ def main() -> int:
 
         ports = ",".join(sorted(info["ports"]))[:60]
         protos = ",".join(sorted(info["protos"]))[:30]
-        comment = f"Blocked by OPNsense firewall; {info['count']} hits, proto={protos}, ports={ports}"
-        ok, msg, quota = submit_report(api_key, ip, default_categories, comment)
-
         ts = int(time.time())
+
+        # Optional: pre-check against AbuseIPDB. Skip if nobody else flagged it yet.
+        if precheck:
+            conf, check_msg = check_abuseipdb(api_key, ip)
+            if conf is None:
+                # API error — don't skip silently, but don't report either
+                db.execute(
+                    "INSERT OR REPLACE INTO reports (ts, ip, categories, ok, message) VALUES (?, ?, ?, ?, ?)",
+                    (ts, ip, default_categories, 0, f"SKIP: precheck failed ({check_msg})"[:200]),
+                )
+                continue
+            if conf < precheck_min_conf:
+                db.execute(
+                    "INSERT OR REPLACE INTO reports (ts, ip, categories, ok, message) VALUES (?, ?, ?, ?, ?)",
+                    (ts, ip, default_categories, 0, f"SKIP: precheck confidence {conf}<{precheck_min_conf} ({check_msg})"[:200]),
+                )
+                continue
+
+        comment = f"Blocked by OPNsense firewall; {info['count']} hits, proto={protos}, ports={ports}"
+
+        if dry_run:
+            db.execute(
+                "INSERT OR REPLACE INTO reports (ts, ip, categories, ok, message) VALUES (?, ?, ?, ?, ?)",
+                (ts, ip, default_categories, 1, f"DRY-RUN: would report ({info['count']} hits)"[:200]),
+            )
+            sent += 1
+            log(f"dry-run: would report {ip} ({info['count']} hits)")
+            continue
+
+        ok, msg, quota = submit_report(api_key, ip, default_categories, comment)
         db.execute(
             "INSERT OR REPLACE INTO reports (ts, ip, categories, ok, message) VALUES (?, ?, ?, ?, ?)",
             (ts, ip, default_categories, 1 if ok else 0, msg[:200]),
@@ -240,7 +293,6 @@ def main() -> int:
             log(f"reported {ip} ({info['count']} hits) -> {msg}")
         else:
             log(f"report {ip} failed: {msg}")
-            # stop on rate-limit so we don't burn more requests
             if "rate limited" in msg or (quota is not None and quota == 0):
                 db.commit()
                 break
