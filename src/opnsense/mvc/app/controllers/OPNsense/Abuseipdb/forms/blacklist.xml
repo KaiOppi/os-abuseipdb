@@ -20,8 +20,7 @@
     <field>
         <id>abuseipdb.blacklist.block_interfaces</id>
         <label>Block on interface(s)</label>
-        <type>select_multiple</type>
-        <style>selectpicker</style>
-        <help>Interfaces where the block rule is active. Select multiple for multi-WAN / failover (e.g. WAN + WAN2). A single floating rule is created on the selected interfaces. Default: WAN.</help>
+        <type>text</type>
+        <help>Comma-separated list of OPNsense interface identifiers where the block rule is active. Single identifier = per-interface rule (e.g. "wan"). Multiple comma-separated = floating rule on all listed interfaces (e.g. "wan,opt1" for multi-WAN / failover). Default: wan.</help>
     </field>
 </form>

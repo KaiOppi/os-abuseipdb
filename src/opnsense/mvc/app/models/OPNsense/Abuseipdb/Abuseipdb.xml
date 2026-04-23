@@ -31,10 +31,10 @@
                 <default>10000</default>
                 <Required>Y</Required>
             </max_ips>
-            <block_interfaces type="InterfaceField">
-                <Multiple>Y</Multiple>
+            <block_interfaces type="TextField">
                 <default>wan</default>
-                <ValidationMessage>At least one interface must be selected for the block rule.</ValidationMessage>
+                <Mask>/^[a-zA-Z0-9_,\s]*$/u</Mask>
+                <ValidationMessage>Comma-separated list of interface identifiers (e.g. "wan,opt1").</ValidationMessage>
             </block_interfaces>
         </blacklist>
         <reporter>
