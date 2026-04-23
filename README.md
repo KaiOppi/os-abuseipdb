@@ -12,7 +12,7 @@ OPNsense-Plugin für bidirektionale Integration mit [AbuseIPDB](https://www.abus
 Download des `.pkg` aus dem [neuesten Release](https://github.com/KaiOppi/os-abuseipdb/releases/latest) und auf der OPNsense installieren:
 
 ```sh
-pkg add https://github.com/KaiOppi/os-abuseipdb/releases/download/v0.1/os-abuseipdb-0.1.pkg
+pkg add https://github.com/KaiOppi/os-abuseipdb/releases/download/v0.1.1/os-abuseipdb-0.1.1.pkg
 service configd restart
 ```
 
