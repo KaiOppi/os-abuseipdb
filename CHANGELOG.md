@@ -20,6 +20,11 @@ First public beta. Feature-complete for the core use case (blacklist + reporter 
 
 ---
 
+## [0.2.1] — 2026-04-24
+
+### Fixed
+- **Cron jobs stayed enabled when the plugin was disabled.** `setup.php` could see stale in-memory config when triggered right after `settings/set`, so `general.enabled` was still read as `1` while the user had already set it to `0`. Fix: `Config::getInstance()->forceReload()` before instantiating the model.
+
 ## 0.1.x — development iterations
 
 These were the pre-public iterations. Kept for transparency.
