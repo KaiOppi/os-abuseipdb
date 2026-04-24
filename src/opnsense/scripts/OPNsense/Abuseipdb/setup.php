@@ -34,12 +34,39 @@ $plugin_enabled = (string)$pluginCfg->general->enabled === "1";
 $blacklist_on = (string)$pluginCfg->blacklist->enabled === "1";
 $reporter_on = (string)$pluginCfg->reporter->enabled === "1";
 
-// Interface list for the block rule; default WAN. Filter invalids and uniq.
+// Interface list for the block rule. Accept either internal identifiers
+// (wan, opt1, ...) or the friendly names from the GUI (WAN, DSL, ...). Map
+// everything to the internal identifier pf expects.
 $block_ifs_raw = (string)$pluginCfg->blacklist->block_interfaces;
-$block_ifs = array_filter(array_map("trim", explode(",", $block_ifs_raw)));
+$block_ifs_input = array_filter(array_map("trim", explode(",", $block_ifs_raw)));
+if (empty($block_ifs_input)) {
+    $block_ifs_input = ["wan"];
+}
+
+global $config;
+$name_to_id = [];
+$id_set = [];
+foreach (($config["interfaces"] ?? []) as $id => $iface) {
+    $id_set[strtolower($id)] = $id;
+    $descr = $iface["descr"] ?? strtoupper($id);
+    $name_to_id[strtolower($descr)] = $id;
+}
+
+$block_ifs = [];
+foreach ($block_ifs_input as $name) {
+    $key = strtolower($name);
+    if (isset($id_set[$key])) {
+        $block_ifs[] = $id_set[$key];
+    } elseif (isset($name_to_id[$key])) {
+        $block_ifs[] = $name_to_id[$key];
+    } else {
+        echo "WARN: unknown interface '$name' — skipped\n";
+    }
+}
 if (empty($block_ifs)) {
     $block_ifs = ["wan"];
 }
+$block_ifs = array_values(array_unique($block_ifs));
 $block_ifs_csv = implode(",", $block_ifs);
 $is_floating = count($block_ifs) > 1;
 

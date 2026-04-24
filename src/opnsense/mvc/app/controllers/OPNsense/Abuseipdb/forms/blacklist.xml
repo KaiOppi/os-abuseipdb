@@ -21,6 +21,6 @@
         <id>abuseipdb.blacklist.block_interfaces</id>
         <label>Block on interface(s)</label>
         <type>text</type>
-        <help>Comma-separated list of OPNsense interface identifiers where the block rule is active. Single identifier = per-interface rule (e.g. "wan"). Multiple comma-separated = floating rule on all listed interfaces (e.g. "wan,opt1" for multi-WAN / failover). Default: wan.</help>
+        <help>Comma-separated list of interfaces where the block rule is active. Accepts either internal identifiers (wan, opt1, ...) or the friendly names shown in Interfaces → Assignments (WAN, DSL, LAN, ...). Single entry = per-interface rule. Multiple comma-separated = floating rule on all listed interfaces (e.g. "wan,opt1" or "WAN,DSL" for multi-WAN / failover). Default: wan.</help>
     </field>
 </form>

@@ -19,7 +19,7 @@ pkg install -y py313-requests   # for Python 3.13 (OPNsense 26.1.5+)
 # pkg install -y py311-requests # for older 26.1.x
 
 # 2. Install the plugin
-pkg add https://github.com/KaiOppi/os-abuseipdb/releases/download/v0.1.14/os-abuseipdb-0.1.14.pkg
+pkg add https://github.com/KaiOppi/os-abuseipdb/releases/download/v0.1.15/os-abuseipdb-0.1.15.pkg
 
 # 3. Reload configd so the new actions become visible
 service configd restart
@@ -48,7 +48,7 @@ On save the following is created automatically:
 Default values (configurable):
 - `Minimum confidence score` — 90 (only high-quality hits)
 - `Maximum number of IPs` — 10000 (free-tier per-call limit)
-- `Block on interface(s)` — WAN. Select multiple interfaces for multi-WAN / failover groups; the rule becomes a floating rule on the selected interfaces.
+- `Block on interface(s)` — WAN. Accepts either the internal identifier (`wan`, `opt1`, ...) or the friendly name from Interfaces → Assignments (`WAN`, `DSL`, ...). Multiple comma-separated entries turn the rule into a floating rule on the listed interfaces (multi-WAN / failover).
 
 ### Reporter
 
