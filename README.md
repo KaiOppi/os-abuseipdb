@@ -182,4 +182,4 @@ BSD 2-Clause — see [LICENSE](LICENSE).
 
 ## Maintainer
 
-Kai Schlestein · info@it-service-nf.de
+Kai Schlestein · bartsi@gmail.com
