@@ -127,37 +127,26 @@
         });
 
         function saveAll() {
+            // Save all four forms in ONE request. Previously we chained
+            // four saveFormToEndpoint calls; if the user hit Save before
+            // every tab's form had finished hydrating via mapDataToFormUI,
+            // the first call could ship stale defaults (e.g. selfcare.enabled=0
+            // while the checkbox was actually ticked), and setup.php then saw
+            // "disabled" and skipped the alias. One call = no partial ordering,
+            // no stale snapshots.
             saveFormToEndpoint(
                 url = "/api/abuseipdb/settings/set",
-                formid = 'frm_general',
+                formid = 'frm_all',
                 callback_ok = function(){
-                    saveFormToEndpoint(
-                        url = "/api/abuseipdb/settings/set",
-                        formid = 'frm_blacklist',
-                        callback_ok = function(){
-                            saveFormToEndpoint(
-                                url = "/api/abuseipdb/settings/set",
-                                formid = 'frm_reporter',
-                                callback_ok = function(){
-                                    saveFormToEndpoint(
-                                        url = "/api/abuseipdb/settings/set",
-                                        formid = 'frm_selfcare',
-                                        callback_ok = function(){
-                                            ajaxCall(
-                                                url = "/api/abuseipdb/service/setup",
-                                                sendData = {},
-                                                callback = function(resp){
-                                                    var out = (resp && resp.output) ? resp.output : "";
-                                                    $("#responseMsg").removeClass("hidden").html(
-                                                        "{{ lang._('Saved and firewall updated:') }}<br><pre>" + out + "</pre>"
-                                                    );
-                                                    refreshStats();
-                                                }
-                                            );
-                                        }
-                                    );
-                                }
+                    ajaxCall(
+                        url = "/api/abuseipdb/service/setup",
+                        sendData = {},
+                        callback = function(resp){
+                            var out = (resp && resp.output) ? resp.output : "";
+                            $("#responseMsg").removeClass("hidden").html(
+                                "{{ lang._('Saved and firewall updated:') }}<br><pre>" + out + "</pre>"
                             );
+                            refreshStats();
                         }
                     );
                 }
@@ -253,17 +242,23 @@
 </ul>
 
 <div class="tab-content content-box">
-    <div id="general" class="tab-pane fade in active">
-        {{ partial("layout_partials/base_form", ['fields': generalForm, 'id': 'frm_general']) }}
-    </div>
-    <div id="blacklist" class="tab-pane fade">
-        {{ partial("layout_partials/base_form", ['fields': blacklistForm, 'id': 'frm_blacklist']) }}
-    </div>
-    <div id="reporter" class="tab-pane fade">
-        {{ partial("layout_partials/base_form", ['fields': reporterForm, 'id': 'frm_reporter']) }}
-    </div>
-    <div id="selfcare" class="tab-pane fade">
-        {{ partial("layout_partials/base_form", ['fields': selfcareForm, 'id': 'frm_selfcare']) }}
+    {# All four config tabs live under #frm_all so saveFormToEndpoint can
+       pick up every field in one shot (avoids the stale-snapshot race
+       described in saveAll above). The inner frm_* ids are kept so
+       mapDataToFormUI still populates each tab individually. #}
+    <div id="frm_all">
+        <div id="general" class="tab-pane fade in active">
+            {{ partial("layout_partials/base_form", ['fields': generalForm, 'id': 'frm_general']) }}
+        </div>
+        <div id="blacklist" class="tab-pane fade">
+            {{ partial("layout_partials/base_form", ['fields': blacklistForm, 'id': 'frm_blacklist']) }}
+        </div>
+        <div id="reporter" class="tab-pane fade">
+            {{ partial("layout_partials/base_form", ['fields': reporterForm, 'id': 'frm_reporter']) }}
+        </div>
+        <div id="selfcare" class="tab-pane fade">
+            {{ partial("layout_partials/base_form", ['fields': selfcareForm, 'id': 'frm_selfcare']) }}
+        </div>
     </div>
     <div id="logtab" class="tab-pane fade" style="padding:10px">
         <div style="margin-bottom:8px">
