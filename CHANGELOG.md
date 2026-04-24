@@ -20,6 +20,11 @@ First public beta. Feature-complete for the core use case (blacklist + reporter 
 
 ---
 
+## [0.2.2] — 2026-04-24
+
+### Fixed
+- **Cron jobs stayed enabled when the plugin was disabled, even with v0.2.1.** The `forceReload()` fix from v0.2.1 was right but not enough. The real bug: `write_config()` (used for the classic filter rule) internally rebuilds the SimpleXML tree from the legacy `$config` array and clobbers any model-tree changes we made earlier via `$mdl->serializeToConfig()`. The subsequent `Config::save()` then wrote the clobbered tree to disk, so cron flips were lost. Fix: re-serialize the alias and cron models *after* `write_config()`, right before the final `Config::save()`.
+
 ## [0.2.1] — 2026-04-24
 
 ### Fixed

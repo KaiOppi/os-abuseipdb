@@ -29,11 +29,11 @@ try {
     // non-fatal
 }
 
-// Force a fresh read of config.xml before instantiating the model. Without
-// this, setup.php can pick up stale in-memory config state when triggered
-// right after settings/set (the UI saveAll chain), e.g. seeing
-// general.enabled=1 while the user just toggled it to 0. Observed fallout:
-// cron jobs not being deactivated on plugin-disable until a second run.
+// Force a fresh read of config.xml before instantiating the model — this
+// setup script runs right after settings/set in the UI save chain, and
+// without the reload we would pick up stale in-memory state (the
+// pre-save model).
+clearstatcache(true, "/conf/config.xml");
 Config::getInstance()->forceReload();
 
 $pluginCfg = new Abuseipdb();
@@ -382,16 +382,26 @@ if ($dirty_cron) {
         foreach ($errs as $e) echo "cron validation: " . $e->getMessage() . "\n";
         exit(1);
     }
+}
+
+// Save order matters. write_config() on the legacy $config array internally
+// rebuilds the SimpleXML tree *from that array* and thus wipes any model
+// changes we made earlier via $mdl->serializeToConfig(). So:
+//   1) write the classic $config array first (if anything classic changed)
+//   2) THEN re-serialize the model trees (alias + cron) to re-inject them
+//   3) THEN Config::save() commits the final tree to disk
+if ($dirty_classic) {
+    write_config("os-abuseipdb: classic filter rule");
+    echo "classic config saved\n";
+}
+
+if ($dirty_model) {
+    $alias_mdl->serializeToConfig();
+}
+if ($dirty_cron) {
     $cron_mdl->serializeToConfig();
 }
 
-// Two-phase save: write_config() on legacy $config, then Config::save() on model tree.
-// Doing both in one pass loses model changes because write_config rewrites the tree
-// from the stale $config array.
-if ($dirty_classic) {
-    write_config("os-abuseipdb: classic WAN user rule");
-    echo "classic config saved\n";
-}
 if ($dirty_model || $dirty_cron) {
     Config::getInstance()->save();
     echo "model config saved\n";
