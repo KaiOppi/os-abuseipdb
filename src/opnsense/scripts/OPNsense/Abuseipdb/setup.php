@@ -33,6 +33,7 @@ $pluginCfg = new Abuseipdb();
 $plugin_enabled = (string)$pluginCfg->general->enabled === "1";
 $blacklist_on = (string)$pluginCfg->blacklist->enabled === "1";
 $reporter_on = (string)$pluginCfg->reporter->enabled === "1";
+$selfcare_on = (string)$pluginCfg->selfcare->enabled === "1";
 
 // Interface list for the block rule. Accept either internal identifiers
 // (wan, opt1, ...) or the friendly names from the GUI (WAN, DSL, ...). Map
@@ -72,6 +73,8 @@ $is_floating = count($block_ifs) > 1;
 
 $alias_name = "abuseipdb_blacklist";
 $rule_marker = "[os-abuseipdb] block AbuseIPDB known attackers";
+$selfcare_alias_name = "abuseipdb_selfcare";
+$selfcare_rule_marker = "[os-abuseipdb] block self-defense list";
 
 $dirty_model = false;
 
@@ -107,6 +110,36 @@ if ($plugin_enabled && $blacklist_on && $existing_alias === null) {
     echo "alias $alias_name exists\n";
 } else {
     echo "alias skipped (plugin/blacklist disabled)\n";
+}
+
+// --- Self-defense alias (separate pf table, populated by reporter) ---
+$existing_sc_alias = null;
+foreach ($alias_mdl->aliases->alias->iterateItems() as $uuid => $a) {
+    if ((string)$a->name === $selfcare_alias_name) {
+        $existing_sc_alias = $a;
+        break;
+    }
+}
+if ($plugin_enabled && $selfcare_on && $existing_sc_alias === null) {
+    $a = $alias_mdl->aliases->alias->Add();
+    $a->enabled = "1";
+    $a->name = $selfcare_alias_name;
+    $a->type = "external";
+    $a->proto = "IPv4";
+    $a->counters = "1";
+    $a->description = "Self-defense blocklist (populated by os-abuseipdb reporter)";
+    $errs = $alias_mdl->performValidation();
+    if (count($errs) > 0) {
+        foreach ($errs as $e) echo "selfcare alias validation: " . $e->getMessage() . "\n";
+        exit(1);
+    }
+    $alias_mdl->serializeToConfig();
+    $dirty_model = true;
+    echo "alias $selfcare_alias_name created\n";
+} else if ($existing_sc_alias !== null) {
+    echo "alias $selfcare_alias_name exists\n";
+} else {
+    echo "selfcare alias skipped (plugin/self-defense disabled)\n";
 }
 
 // --- Block rule (classic <filter><rule>) ---
@@ -201,6 +234,73 @@ if ($plugin_enabled && $blacklist_on) {
     }
 }
 
+// --- Self-defense block rule (same structure as blacklist rule, own alias) ---
+$sc_rule_idx = null;
+foreach ($config["filter"]["rule"] as $i => $r) {
+    if (is_array($r) && (($r["descr"] ?? "") === $selfcare_rule_marker)) {
+        $sc_rule_idx = $i;
+        break;
+    }
+}
+
+if ($sc_rule_idx !== null && $plugin_enabled && $selfcare_on) {
+    $cur_if = $config["filter"]["rule"][$sc_rule_idx]["interface"] ?? "";
+    $cur_floating = !empty($config["filter"]["rule"][$sc_rule_idx]["floating"]);
+    $need_floating = $is_floating;
+    if ($cur_if !== $block_ifs_csv || $cur_floating !== $need_floating) {
+        array_splice($config["filter"]["rule"], $sc_rule_idx, 1);
+        $sc_rule_idx = null;
+        $dirty_classic = true;
+        echo "selfcare rule: deleted (interface selection changed) — will recreate\n";
+    }
+}
+
+if ($plugin_enabled && $selfcare_on) {
+    $sc_rule = [
+        "type"           => "block",
+        "interface"      => $block_ifs_csv,
+        "ipprotocol"     => "inet",
+        "statetype"      => "keep state",
+        "direction"      => "in",
+        "quick"          => "1",
+        "log"            => "1",
+        "disablereplyto" => "1",
+        "descr"          => $selfcare_rule_marker,
+        "source"         => ["network" => $selfcare_alias_name],
+        "destination"    => ["any" => "1"],
+        "created"        => ["username" => "os-abuseipdb", "time" => time()],
+        "updated"        => ["username" => "os-abuseipdb", "time" => time()],
+    ];
+    if ($is_floating) {
+        $sc_rule["floating"] = "yes";
+    }
+    if ($sc_rule_idx === null) {
+        array_unshift($config["filter"]["rule"], $sc_rule);
+        $dirty_classic = true;
+        echo "selfcare block rule inserted at top of user rules\n";
+    } else {
+        if (!empty($config["filter"]["rule"][$sc_rule_idx]["disabled"])) {
+            unset($config["filter"]["rule"][$sc_rule_idx]["disabled"]);
+            $dirty_classic = true;
+            echo "selfcare block rule re-enabled\n";
+        }
+        if (empty($config["filter"]["rule"][$sc_rule_idx]["disablereplyto"])) {
+            $config["filter"]["rule"][$sc_rule_idx]["disablereplyto"] = "1";
+            $dirty_classic = true;
+        }
+        if (isset($config["filter"]["rule"][$sc_rule_idx]["protocol"])) {
+            unset($config["filter"]["rule"][$sc_rule_idx]["protocol"]);
+            $dirty_classic = true;
+        }
+    }
+} else if ($sc_rule_idx !== null) {
+    if (empty($config["filter"]["rule"][$sc_rule_idx]["disabled"])) {
+        $config["filter"]["rule"][$sc_rule_idx]["disabled"] = "1";
+        $dirty_classic = true;
+        echo "selfcare block rule disabled\n";
+    }
+}
+
 // --- Cron jobs ---
 $cron_mdl = new Cron();
 $dirty_cron = false;
@@ -258,6 +358,15 @@ $dirty_cron |= ensure_cron(
     "abuseipdb report",
     "*/5", "*",
     $plugin_enabled && $reporter_on
+);
+
+// Self-defense cleanup hourly at :07 (off-peak)
+$dirty_cron |= ensure_cron(
+    $cron_mdl,
+    "os-abuseipdb: self-defense cleanup",
+    "abuseipdb selfcare_cleanup",
+    "7", "*",
+    $plugin_enabled && $selfcare_on
 );
 
 if ($dirty_cron) {

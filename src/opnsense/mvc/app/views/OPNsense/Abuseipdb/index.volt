@@ -11,9 +11,10 @@
     .abuseipdb-info td.lbl { color: #555; width: 180px; white-space: nowrap; }
     .abuseipdb-info .ok { color: #2e7d32; font-weight: 600; }
     .abuseipdb-info .warn { color: #c62828; font-weight: 600; }
-    #reportsTable { width: 100%; font-size: 12px; }
-    #reportsTable td, #reportsTable th { padding: 4px 8px; border-bottom: 1px solid #eee; }
-    #reportsTable th { background: #f4f4f4; text-align: left; }
+    #reportsTable, #selfcareTable { width: 100%; font-size: 12px; }
+    #reportsTable td, #reportsTable th,
+    #selfcareTable td, #selfcareTable th { padding: 4px 8px; border-bottom: 1px solid #eee; }
+    #reportsTable th, #selfcareTable th { background: #f4f4f4; text-align: left; }
 </style>
 
 <script>
@@ -39,6 +40,44 @@
                 $("#stat_quota").text(d.quota_remaining === null ? '—' : d.quota_remaining);
                 $("#stat_reports_today").text(d.reports_today);
                 $("#stat_reports_total").text(d.reports_total);
+            }
+        );
+    }
+
+    function fmtDuration(sec) {
+        sec = Math.max(0, sec|0);
+        var d = Math.floor(sec / 86400);
+        var h = Math.floor((sec % 86400) / 3600);
+        var m = Math.floor((sec % 3600) / 60);
+        if (d > 0) return d + 'd ' + h + 'h';
+        if (h > 0) return h + 'h ' + m + 'm';
+        return m + 'm';
+    }
+
+    function refreshSelfcare() {
+        ajaxCall(
+            url = "/api/abuseipdb/service/selfcare_list",
+            sendData = {limit: 200},
+            callback = function(resp) {
+                if (!resp || resp.status !== 'ok') return;
+                var rows = resp.data.rows;
+                var total = resp.data.total_active;
+                $("#selfcareTotal").text(total);
+                var tbody = $("#selfcareTable tbody").empty();
+                if (rows.length === 0) {
+                    tbody.append('<tr><td colspan="4" style="text-align:center;color:#888;padding:12px">{{ lang._("No active entries.") }}</td></tr>');
+                } else {
+                    rows.forEach(function(r) {
+                        tbody.append(
+                            '<tr>' +
+                            '<td><tt>' + r.ip + '</tt></td>' +
+                            '<td>' + fmtTs(r.added_ts) + '</td>' +
+                            '<td>' + fmtTs(r.expires_ts) + ' (' + fmtDuration(r.remaining_sec) + ')</td>' +
+                            '<td>' + (r.categories || '') + '</td>' +
+                            '</tr>'
+                        );
+                    });
+                }
             }
         );
     }
@@ -75,7 +114,8 @@
     $(document).ready(function() {
         var data_get_map = {'frm_general': "/api/abuseipdb/settings/get",
                             'frm_blacklist': "/api/abuseipdb/settings/get",
-                            'frm_reporter': "/api/abuseipdb/settings/get"};
+                            'frm_reporter': "/api/abuseipdb/settings/get",
+                            'frm_selfcare': "/api/abuseipdb/settings/get"};
 
         mapDataToFormUI(data_get_map).done(function(){
             updateServiceControlUI('abuseipdb');
@@ -99,15 +139,21 @@
                                 url = "/api/abuseipdb/settings/set",
                                 formid = 'frm_reporter',
                                 callback_ok = function(){
-                                    ajaxCall(
-                                        url = "/api/abuseipdb/service/setup",
-                                        sendData = {},
-                                        callback = function(resp){
-                                            var out = (resp && resp.output) ? resp.output : "";
-                                            $("#responseMsg").removeClass("hidden").html(
-                                                "{{ lang._('Saved and firewall updated:') }}<br><pre>" + out + "</pre>"
+                                    saveFormToEndpoint(
+                                        url = "/api/abuseipdb/settings/set",
+                                        formid = 'frm_selfcare',
+                                        callback_ok = function(){
+                                            ajaxCall(
+                                                url = "/api/abuseipdb/service/setup",
+                                                sendData = {},
+                                                callback = function(resp){
+                                                    var out = (resp && resp.output) ? resp.output : "";
+                                                    $("#responseMsg").removeClass("hidden").html(
+                                                        "{{ lang._('Saved and firewall updated:') }}<br><pre>" + out + "</pre>"
+                                                    );
+                                                    refreshStats();
+                                                }
                                             );
-                                            refreshStats();
                                         }
                                     );
                                 }
@@ -145,9 +191,12 @@
         });
 
         $('a[data-toggle="tab"]').on('shown.bs.tab', function(e) {
-            if ($(e.target).attr('href') === '#logtab') refreshReports();
+            if ($(e.target).attr('href') === '#logtab') {
+                refreshReports();
+                refreshSelfcare();
+            }
         });
-        $("#refreshReportsAct").click(refreshReports);
+        $("#refreshReportsAct").click(function(){ refreshReports(); refreshSelfcare(); });
 
         refreshStats();
         setInterval(refreshStats, 30000);
@@ -199,6 +248,7 @@
     <li class="active"><a data-toggle="tab" href="#general">{{ lang._('General') }}</a></li>
     <li><a data-toggle="tab" href="#blacklist">{{ lang._('Blacklist') }}</a></li>
     <li><a data-toggle="tab" href="#reporter">{{ lang._('Reporter') }}</a></li>
+    <li><a data-toggle="tab" href="#selfcare">{{ lang._('Self-Defense') }}</a></li>
     <li><a data-toggle="tab" href="#logtab">{{ lang._('Log') }}</a></li>
 </ul>
 
@@ -212,6 +262,9 @@
     <div id="reporter" class="tab-pane fade">
         {{ partial("layout_partials/base_form", ['fields': reporterForm, 'id': 'frm_reporter']) }}
     </div>
+    <div id="selfcare" class="tab-pane fade">
+        {{ partial("layout_partials/base_form", ['fields': selfcareForm, 'id': 'frm_selfcare']) }}
+    </div>
     <div id="logtab" class="tab-pane fade" style="padding:10px">
         <div style="margin-bottom:8px">
             <button class="btn btn-default btn-sm" id="refreshReportsAct">
@@ -219,6 +272,7 @@
             </button>
             <span id="reportsLastFetch" style="color:#666;font-size:11px;margin-left:10px"></span>
         </div>
+        <h4 style="margin-top:0">{{ lang._('Recent reports') }}</h4>
         <table id="reportsTable">
             <thead>
                 <tr>
@@ -227,6 +281,22 @@
                     <th>{{ lang._('Categories') }}</th>
                     <th>{{ lang._('Result') }}</th>
                     <th>{{ lang._('Message') }}</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+
+        <h4 style="margin-top:18px">
+            {{ lang._('Self-Defense active blocks') }}
+            (<span id="selfcareTotal">0</span>)
+        </h4>
+        <table id="selfcareTable">
+            <thead>
+                <tr>
+                    <th>{{ lang._('IP') }}</th>
+                    <th>{{ lang._('Added') }}</th>
+                    <th>{{ lang._('Expires') }}</th>
+                    <th>{{ lang._('Categories') }}</th>
                 </tr>
             </thead>
             <tbody></tbody>

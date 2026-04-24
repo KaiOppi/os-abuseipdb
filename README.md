@@ -19,7 +19,7 @@ pkg install -y py313-requests   # for Python 3.13 (OPNsense 26.1.5+)
 # pkg install -y py311-requests # for older 26.1.x
 
 # 2. Install the plugin
-pkg add https://github.com/KaiOppi/os-abuseipdb/releases/download/v0.1.15/os-abuseipdb-0.1.15.pkg
+pkg add https://github.com/KaiOppi/os-abuseipdb/releases/download/v0.1.16/os-abuseipdb-0.1.16.pkg
 
 # 3. Reload configd so the new actions become visible
 service configd restart
@@ -67,6 +67,21 @@ Default values:
 
 > **Note:** IPs blocked by the plugin's own blacklist rule are **not** reported back (that would be circular reporting).
 
+### Self-Defense
+
+Tab **Self-Defense** → enable.
+
+Every IP the reporter successfully submits to AbuseIPDB is also dropped into a **local** pf table `abuseipdb_selfcare` with a TTL (default 72 h). A second block rule — same interfaces as the blacklist rule — drops traffic from that table. An hourly cleanup cron expires entries whose TTL has passed.
+
+This closes the window between "we saw the attack" and "AbuseIPDB's community-wide blacklist catches up with this IP". Attackers hitting you get blocked locally immediately.
+
+Default values:
+- `Block duration (hours)` — 72 (3 days; range 1 … 8760)
+
+Requires the reporter to be enabled and in non-dry-run mode; self-defense entries are only created for IPs that actually got submitted to AbuseIPDB.
+
+The current self-defense list is visible under the **Log** tab ("Self-Defense active blocks").
+
 ## Dashboard widget
 
 **Lobby → Dashboard → Add widget → "AbuseIPDB"** — shows blocklist size, last download time, API quota, reports-today/total.
@@ -85,6 +100,15 @@ configctl abuseipdb download
 
 # Trigger reporter manually
 configctl abuseipdb report
+
+# Self-defense list in pf table
+pfctl -t abuseipdb_selfcare -T show | wc -l
+
+# Show active self-defense entries (with expiry timestamps)
+configctl abuseipdb selfcare_list 100
+
+# Run expiry cleanup manually
+configctl abuseipdb selfcare_cleanup
 ```
 
 ## Uninstall
@@ -114,6 +138,7 @@ pkg remove os-abuseipdb
 - [x] Report log viewer in the plugin + refresh button
 - [x] Quick-jump navigation to alias / rule / cron / log
 - [x] FreeBSD pkg + GitHub release
+- [x] Self-Defense local blocklist (TTL-based, auto-populated from reporter submits)
 
 **Open:**
 - [ ] Rule-to-category mapping UI (currently default categories only)

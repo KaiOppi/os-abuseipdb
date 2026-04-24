@@ -18,6 +18,7 @@ STATE_DB = os.path.join(STATE_DIR, "state.sqlite")
 BLOCKLIST_FILE = os.path.join(STATE_DIR, "blocklist.txt")
 LOG_FILE = os.path.join(STATE_DIR, "abuseipdb.log")
 PF_TABLE = "abuseipdb_blacklist"
+PF_TABLE_SELFCARE = "abuseipdb_selfcare"
 
 API_BASE = "https://api.abuseipdb.com/api/v2"
 
@@ -39,6 +40,10 @@ DEFAULT_CONFIG = {
         "dry_run": "1",
         "precheck": "1",
         "precheck_min_confidence": "25",
+    },
+    "selfcare": {
+        "enabled": "0",
+        "ttl_hours": "72",
     },
 }
 
@@ -73,6 +78,16 @@ def get_db() -> sqlite3.Connection:
         CREATE TABLE IF NOT EXISTS report_dedupe (
             ip TEXT PRIMARY KEY,
             last_reported_ts INTEGER NOT NULL
+        )
+    """)
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS selfcare_entries (
+            ip TEXT PRIMARY KEY,
+            added_ts INTEGER NOT NULL,
+            expires_ts INTEGER NOT NULL,
+            source TEXT,
+            categories TEXT,
+            removed_ts INTEGER
         )
     """)
     db.commit()

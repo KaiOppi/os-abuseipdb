@@ -87,4 +87,22 @@ class ServiceController extends ApiMutableServiceControllerBase
         }
         return ['status' => 'ok', 'data' => $data];
     }
+
+    /**
+     * Return the live self-defense block list as JSON.
+     */
+    public function selfcareListAction()
+    {
+        $limit = (int)($this->request->get('limit', 'int', 200));
+        if ($limit < 1) $limit = 200;
+        if ($limit > 1000) $limit = 1000;
+
+        $backend = new Backend();
+        $output = trim($backend->configdpRun('abuseipdb selfcare_list', [(string)$limit]));
+        $data = json_decode($output, true);
+        if (!is_array($data)) {
+            return ['status' => 'failed', 'raw' => $output];
+        }
+        return $data;
+    }
 }

@@ -14,6 +14,7 @@ class IndexController extends \OPNsense\Base\IndexController
         $this->view->generalForm = $this->getForm("general");
         $this->view->blacklistForm = $this->getForm("blacklist");
         $this->view->reporterForm = $this->getForm("reporter");
+        $this->view->selfcareForm = $this->getForm("selfcare");
         $this->view->pick('OPNsense/Abuseipdb/index');
     }
 }

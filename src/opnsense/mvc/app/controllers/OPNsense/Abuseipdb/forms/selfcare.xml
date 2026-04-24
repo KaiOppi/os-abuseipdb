@@ -1,0 +1,14 @@
+<form>
+    <field>
+        <id>abuseipdb.selfcare.enabled</id>
+        <label>Self-Defense blocklist enabled</label>
+        <type>checkbox</type>
+        <help>Automatically add IPs that the reporter submits to AbuseIPDB to a local block list (pf table "abuseipdb_selfcare"). Attackers hitting this firewall get blocked locally — useful for IPs not yet widely reported. Requires the reporter to be enabled.</help>
+    </field>
+    <field>
+        <id>abuseipdb.selfcare.ttl_hours</id>
+        <label>Block duration (hours)</label>
+        <type>text</type>
+        <help>How long an IP stays in the self-defense block list. Expired entries are removed automatically (hourly cleanup). Default: 72 hours. Range: 1 - 8760 (1 year).</help>
+    </field>
+</form>

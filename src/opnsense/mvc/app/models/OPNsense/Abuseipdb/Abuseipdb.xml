@@ -37,6 +37,18 @@
                 <ValidationMessage>Comma-separated list of interface identifiers (e.g. "wan,opt1").</ValidationMessage>
             </block_interfaces>
         </blacklist>
+        <selfcare>
+            <enabled type="BooleanField">
+                <default>0</default>
+                <Required>Y</Required>
+            </enabled>
+            <ttl_hours type="IntegerField">
+                <MinimumValue>1</MinimumValue>
+                <MaximumValue>8760</MaximumValue>
+                <default>72</default>
+                <Required>Y</Required>
+            </ttl_hours>
+        </selfcare>
         <reporter>
             <enabled type="BooleanField">
                 <default>0</default>

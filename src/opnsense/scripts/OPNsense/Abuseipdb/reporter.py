@@ -17,10 +17,11 @@ Flow per run:
 import ipaddress
 import os
 import re
+import subprocess
 import sys
 import time
 from collections import defaultdict
-from _common import API_BASE, STATE_DIR, die, ensure_state_dir, get_config, get_db, log
+from _common import API_BASE, PF_TABLE_SELFCARE, STATE_DIR, die, ensure_state_dir, get_config, get_db, log
 
 try:
     import requests
@@ -203,6 +204,8 @@ def main() -> int:
     dry_run = cfg["reporter"]["dry_run"] == "1"
     precheck = cfg["reporter"]["precheck"] == "1"
     precheck_min_conf = int(cfg["reporter"]["precheck_min_confidence"])
+    selfcare_on = cfg["selfcare"]["enabled"] == "1"
+    selfcare_ttl = int(cfg["selfcare"]["ttl_hours"]) * 3600
 
     lines = read_new_lines()
     if not lines:
@@ -291,6 +294,31 @@ def main() -> int:
             )
             sent += 1
             log(f"reported {ip} ({info['count']} hits) -> {msg}")
+
+            # Self-defense: also drop this IP into our local pf table so it
+            # stops hitting us while AbuseIPDB catches up. ttl_hours-driven,
+            # cleanup cron removes expired entries. Keep existing expiry if
+            # the IP is already tracked (don't extend silently).
+            if selfcare_on:
+                existing = db.execute(
+                    "SELECT expires_ts FROM selfcare_entries WHERE ip = ? AND removed_ts IS NULL",
+                    (ip,),
+                ).fetchone()
+                if existing is None:
+                    expires = ts + selfcare_ttl
+                    db.execute(
+                        "INSERT OR REPLACE INTO selfcare_entries "
+                        "(ip, added_ts, expires_ts, source, categories, removed_ts) "
+                        "VALUES (?, ?, ?, ?, ?, NULL)",
+                        (ip, ts, expires, "reporter", default_categories),
+                    )
+                    try:
+                        subprocess.run(
+                            ["/sbin/pfctl", "-t", PF_TABLE_SELFCARE, "-T", "add", ip],
+                            check=False, capture_output=True, timeout=5,
+                        )
+                    except Exception as exc:
+                        log(f"selfcare pfctl add {ip} failed: {exc}")
         else:
             log(f"report {ip} failed: {msg}")
             if "rate limited" in msg or (quota is not None and quota == 0):
