@@ -241,24 +241,24 @@
     <li><a data-toggle="tab" href="#logtab">{{ lang._('Log') }}</a></li>
 </ul>
 
-<div class="tab-content content-box">
-    {# All four config tabs live under #frm_all so saveFormToEndpoint can
-       pick up every field in one shot (avoids the stale-snapshot race
-       described in saveAll above). The inner frm_* ids are kept so
-       mapDataToFormUI still populates each tab individually. #}
-    <div id="frm_all">
-        <div id="general" class="tab-pane fade in active">
-            {{ partial("layout_partials/base_form", ['fields': generalForm, 'id': 'frm_general']) }}
-        </div>
-        <div id="blacklist" class="tab-pane fade">
-            {{ partial("layout_partials/base_form", ['fields': blacklistForm, 'id': 'frm_blacklist']) }}
-        </div>
-        <div id="reporter" class="tab-pane fade">
-            {{ partial("layout_partials/base_form", ['fields': reporterForm, 'id': 'frm_reporter']) }}
-        </div>
-        <div id="selfcare" class="tab-pane fade">
-            {{ partial("layout_partials/base_form", ['fields': selfcareForm, 'id': 'frm_selfcare']) }}
-        </div>
+<div id="frm_all" class="tab-content content-box">
+    {# id="frm_all" is here (not on an inner wrapper) because Bootstrap
+       uses the direct-child selector `.tab-content > .tab-pane` to show
+       exactly one pane at a time. Nesting an extra div broke that and
+       every tab was rendered stacked. saveFormToEndpoint walks the full
+       subtree for fields, so putting the id one level up still captures
+       every model-path-tagged input in a single POST. #}
+    <div id="general" class="tab-pane fade in active">
+        {{ partial("layout_partials/base_form", ['fields': generalForm, 'id': 'frm_general']) }}
+    </div>
+    <div id="blacklist" class="tab-pane fade">
+        {{ partial("layout_partials/base_form", ['fields': blacklistForm, 'id': 'frm_blacklist']) }}
+    </div>
+    <div id="reporter" class="tab-pane fade">
+        {{ partial("layout_partials/base_form", ['fields': reporterForm, 'id': 'frm_reporter']) }}
+    </div>
+    <div id="selfcare" class="tab-pane fade">
+        {{ partial("layout_partials/base_form", ['fields': selfcareForm, 'id': 'frm_selfcare']) }}
     </div>
     <div id="logtab" class="tab-pane fade" style="padding:10px">
         <div style="margin-bottom:8px">
