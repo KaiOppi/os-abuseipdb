@@ -29,6 +29,13 @@ try {
     // non-fatal
 }
 
+// Force a fresh read of config.xml before instantiating the model. Without
+// this, setup.php can pick up stale in-memory config state when triggered
+// right after settings/set (the UI saveAll chain), e.g. seeing
+// general.enabled=1 while the user just toggled it to 0. Observed fallout:
+// cron jobs not being deactivated on plugin-disable until a second run.
+Config::getInstance()->forceReload();
+
 $pluginCfg = new Abuseipdb();
 $plugin_enabled = (string)$pluginCfg->general->enabled === "1";
 $blacklist_on = (string)$pluginCfg->blacklist->enabled === "1";
