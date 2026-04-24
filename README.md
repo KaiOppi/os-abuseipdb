@@ -172,6 +172,10 @@ See [CHANGELOG.md](CHANGELOG.md) for the full per-version history.
 - GitHub issues: <https://github.com/KaiOppi/os-abuseipdb/issues>
 - Constructive feedback, feature ideas and bug reports are very welcome while the plugin is in beta.
 
+## Acknowledgements
+
+Developed with [Claude Code](https://claude.com/claude-code) as a pair-programming assistant. Architecture decisions, production testing, and every deployment to a live OPNsense were driven by the maintainer; Claude Code sped up the grind of boilerplate, scaffolding, and hunting down OPNsense-specific gotchas.
+
 ## License
 
 BSD 2-Clause — see [LICENSE](LICENSE).
