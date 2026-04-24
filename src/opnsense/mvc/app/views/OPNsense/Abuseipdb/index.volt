@@ -180,12 +180,12 @@
         });
 
         $('a[data-toggle="tab"]').on('shown.bs.tab', function(e) {
-            if ($(e.target).attr('href') === '#logtab') {
-                refreshReports();
-                refreshSelfcare();
-            }
+            var href = $(e.target).attr('href');
+            if (href === '#logtab') refreshReports();
+            if (href === '#selfcare') refreshSelfcare();
         });
-        $("#refreshReportsAct").click(function(){ refreshReports(); refreshSelfcare(); });
+        $("#refreshReportsAct").click(refreshReports);
+        $("#refreshSelfcareAct").click(refreshSelfcare);
 
         refreshStats();
         setInterval(refreshStats, 30000);
@@ -259,6 +259,26 @@
     </div>
     <div id="selfcare" class="tab-pane fade">
         {{ partial("layout_partials/base_form", ['fields': selfcareForm, 'id': 'frm_selfcare']) }}
+        <div style="padding:10px 15px 15px 15px">
+            <h4 style="margin-top:18px">
+                {{ lang._('Currently blocked') }}
+                (<span id="selfcareTotal">0</span>)
+                <button class="btn btn-default btn-xs" id="refreshSelfcareAct" style="margin-left:10px">
+                    <span class="fa fa-refresh"></span> {{ lang._('Refresh') }}
+                </button>
+            </h4>
+            <table id="selfcareTable">
+                <thead>
+                    <tr>
+                        <th>{{ lang._('IP') }}</th>
+                        <th>{{ lang._('Added') }}</th>
+                        <th>{{ lang._('Expires') }}</th>
+                        <th>{{ lang._('Categories') }}</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
     </div>
     <div id="logtab" class="tab-pane fade" style="padding:10px">
         <div style="margin-bottom:8px">
@@ -276,22 +296,6 @@
                     <th>{{ lang._('Categories') }}</th>
                     <th>{{ lang._('Result') }}</th>
                     <th>{{ lang._('Message') }}</th>
-                </tr>
-            </thead>
-            <tbody></tbody>
-        </table>
-
-        <h4 style="margin-top:18px">
-            {{ lang._('Self-Defense active blocks') }}
-            (<span id="selfcareTotal">0</span>)
-        </h4>
-        <table id="selfcareTable">
-            <thead>
-                <tr>
-                    <th>{{ lang._('IP') }}</th>
-                    <th>{{ lang._('Added') }}</th>
-                    <th>{{ lang._('Expires') }}</th>
-                    <th>{{ lang._('Categories') }}</th>
                 </tr>
             </thead>
             <tbody></tbody>
