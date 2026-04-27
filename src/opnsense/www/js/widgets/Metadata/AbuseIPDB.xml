@@ -12,6 +12,7 @@
             <quota>API quota left</quota>
             <reports_today>Reports today</reports_today>
             <reports_total>Reports total</reports_total>
+            <selfcare_active>Self-defense (active/total)</selfcare_active>
             <settings>Plugin settings</settings>
         </translations>
     </abuseipdb>

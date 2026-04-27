@@ -27,6 +27,8 @@ def main() -> int:
         "quota_remaining": None,
         "reports_today": 0,
         "reports_total": 0,
+        "selfcare_active": 0,
+        "selfcare_total": 0,
     }
 
     if os.path.exists(os.path.join(STATE_DIR, "state.sqlite")):
@@ -46,6 +48,16 @@ def main() -> int:
         data["reports_today"] = row[0] if row else 0
         row = db.execute("SELECT COUNT(*) FROM reports WHERE ok = 1").fetchone()
         data["reports_total"] = row[0] if row else 0
+
+        now = int(time.time())
+        row = db.execute(
+            "SELECT COUNT(*) FROM selfcare_entries WHERE removed_ts IS NULL AND expires_ts > ?",
+            (now,),
+        ).fetchone()
+        data["selfcare_active"] = row[0] if row else 0
+        row = db.execute("SELECT COUNT(*) FROM selfcare_entries").fetchone()
+        data["selfcare_total"] = row[0] if row else 0
+
         db.close()
 
     out_json(data)

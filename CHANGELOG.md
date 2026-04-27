@@ -20,6 +20,11 @@ First public beta. Feature-complete for the core use case (blacklist + reporter 
 
 ---
 
+## [0.2.4] — 2026-04-27
+
+### Added
+- **Self-defense counters in the Dashboard widget and the plugin info banner.** Both now show `active / total` for the self-defense block list. The widget gets a new "Self-defense (active/total)" row, and the info banner at the top of the plugin page does the same. Stats endpoint exposes two new fields: `selfcare_active` (live entries with non-expired TTL) and `selfcare_total` (everything ever added, incl. expired/removed).
+
 ## [0.2.3] — 2026-04-27
 
 ### Changed

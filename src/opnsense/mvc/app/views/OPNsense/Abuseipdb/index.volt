@@ -40,6 +40,8 @@
                 $("#stat_quota").text(d.quota_remaining === null ? '—' : d.quota_remaining);
                 $("#stat_reports_today").text(d.reports_today);
                 $("#stat_reports_total").text(d.reports_total);
+                $("#stat_selfcare_active").text((d.selfcare_active || 0).toLocaleString());
+                $("#stat_selfcare_total").text((d.selfcare_total || 0).toLocaleString());
             }
         );
     }
@@ -214,6 +216,10 @@
         <tr>
             <td class="lbl">{{ lang._('Reports today / total') }}</td>
             <td><span id="stat_reports_today">—</span> / <span id="stat_reports_total">—</span></td>
+        </tr>
+        <tr>
+            <td class="lbl">{{ lang._('Self-defense (active / total)') }}</td>
+            <td><span id="stat_selfcare_active">—</span> / <span id="stat_selfcare_total">—</span></td>
         </tr>
     </table>
     <div style="margin-top:8px">

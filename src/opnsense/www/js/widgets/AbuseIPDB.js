@@ -23,6 +23,8 @@ export default class AbuseIPDB extends BaseWidget {
                     <td style="text-align:right"><span id="ab-today">—</span></td></tr>
                 <tr><td style="color:#555">${this.translations.reports_total}</td>
                     <td style="text-align:right"><span id="ab-total">—</span></td></tr>
+                <tr><td style="color:#555">${this.translations.selfcare_active}</td>
+                    <td style="text-align:right"><span id="ab-sc-active">—</span> / <span id="ab-sc-total">—</span></td></tr>
             </table>
             <div style="margin-top:6px;text-align:right">
                 <a href="/ui/abuseipdb/" style="font-size:11px">${this.translations.settings} &rarr;</a>
@@ -51,6 +53,8 @@ export default class AbuseIPDB extends BaseWidget {
             $('#ab-quota', this.$widget).text(d.quota_remaining === null ? '—' : d.quota_remaining);
             $('#ab-today', this.$widget).text(d.reports_today || 0);
             $('#ab-total', this.$widget).text(d.reports_total || 0);
+            $('#ab-sc-active', this.$widget).text((d.selfcare_active || 0).toLocaleString());
+            $('#ab-sc-total', this.$widget).text((d.selfcare_total || 0).toLocaleString());
         } catch (e) {
             // silent — plugin may be disabled
         }
