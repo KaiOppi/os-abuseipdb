@@ -3,23 +3,6 @@
 All notable changes to this project are documented here.
 The format roughly follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project uses [Semantic Versioning](https://semver.org/).
 
-## [0.2.0] — 2026-04-24
-
-First public beta. Feature-complete for the core use case (blacklist + reporter + self-defense) and stable on the two production systems it runs on. Looking for community testers.
-
-### Highlights
-- **Blacklist downloader** — pulls the AbuseIPDB blocklist into a pf table, auto-creates the firewall alias and block rule, daily cron at 03:13.
-- **Reporter** — parses the OPNsense filter log, submits qualifying attacker IPs to AbuseIPDB every 5 min. Three legitimacy safeguards (dry-run default, pre-check against AbuseIPDB, noise filter).
-- **Self-Defense** — local TTL-based block list. IPs that the reporter submits are also dropped into a second pf table and blocked locally until their TTL expires. Closes the window between "we saw the attack" and "AbuseIPDB community picks it up".
-- **Dashboard widget** and in-plugin log viewer with quick-jump navigation.
-- **Fire & forget** — every cron job is auto-created when you flip the corresponding enabled checkbox; no manual crontab editing.
-
-### Known limitations
-- IPv4 only (IPv6 reporter support is on the roadmap).
-- No German translation yet — the plugin is in English pending OPNsense's community Crowdin workflow.
-
----
-
 ## [0.2.4] — 2026-04-27
 
 ### Added
@@ -47,6 +30,23 @@ First public beta. Feature-complete for the core use case (blacklist + reporter 
 
 ### Fixed
 - **Cron jobs stayed enabled when the plugin was disabled.** `setup.php` could see stale in-memory config when triggered right after `settings/set`, so `general.enabled` was still read as `1` while the user had already set it to `0`. Fix: `Config::getInstance()->forceReload()` before instantiating the model.
+
+## [0.2.0] — 2026-04-24
+
+First public beta. Feature-complete for the core use case (blacklist + reporter + self-defense) and stable on the two production systems it runs on. Looking for community testers.
+
+### Highlights
+- **Blacklist downloader** — pulls the AbuseIPDB blocklist into a pf table, auto-creates the firewall alias and block rule, daily cron at 03:13.
+- **Reporter** — parses the OPNsense filter log, submits qualifying attacker IPs to AbuseIPDB every 5 min. Three legitimacy safeguards (dry-run default, pre-check against AbuseIPDB, noise filter).
+- **Self-Defense** — local TTL-based block list. IPs that the reporter submits are also dropped into a second pf table and blocked locally until their TTL expires. Closes the window between "we saw the attack" and "AbuseIPDB community picks it up".
+- **Dashboard widget** and in-plugin log viewer with quick-jump navigation.
+- **Fire & forget** — every cron job is auto-created when you flip the corresponding enabled checkbox; no manual crontab editing.
+
+### Known limitations
+- IPv4 only (IPv6 reporter support is on the roadmap).
+- No German translation yet — the plugin is in English pending OPNsense's community Crowdin workflow.
+
+---
 
 ## 0.1.x — development iterations
 
