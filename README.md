@@ -32,7 +32,7 @@ pkg install -y py313-requests   # for Python 3.13 (OPNsense 26.1.5+)
 # pkg install -y py311-requests # for older 26.1.x
 
 # 2. Install the plugin
-pkg add https://github.com/KaiOppi/os-abuseipdb/releases/download/v0.2.2/os-abuseipdb-0.2.2.pkg
+pkg add https://github.com/KaiOppi/os-abuseipdb/releases/download/v0.2.3/os-abuseipdb-0.2.3.pkg
 
 # 3. Reload configd so the new actions become visible
 service configd restart
@@ -91,7 +91,10 @@ This closes the window between "we saw the attack" and "AbuseIPDB's community-wi
 Default values:
 - `Block duration (hours)` — 72 (3 days; range 1 … 8760)
 
-Requires the reporter to be enabled and in non-dry-run mode; self-defense entries are only created for IPs that actually got submitted to AbuseIPDB.
+Trigger conditions for adding an IP to the self-defense table:
+
+- **With pre-check on** (default): IP is added as soon as `/api/v2/check` confirms `confidence >= precheck_min_confidence` — independent of whether the report itself goes through. This means self-defense keeps filling even when the daily report quota is exhausted, the reporter is in dry-run, or AbuseIPDB temporarily rejects the submit. Pre-check uses its own AbuseIPDB endpoint quota (1000 `/check`/day on the free tier, separate from `/report`).
+- **With pre-check off**: IP is added only after a successful real report, since there's no confidence signal otherwise (we won't blindly local-block on raw log hits).
 
 The current self-defense list is visible directly in the **Self-Defense** tab under the settings ("Currently blocked").
 

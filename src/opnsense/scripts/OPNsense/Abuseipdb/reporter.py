@@ -162,6 +162,32 @@ def should_skip_ip(db, ip: str, rate_limit_min: int) -> bool:
     return (time.time() - row[0]) < rate_limit_min * 60
 
 
+def selfcare_add(db, ip: str, ts: int, ttl_sec: int, categories: str, source: str) -> bool:
+    """Insert IP into selfcare_entries + pf table. Return True if newly added,
+    False if already tracked (existing TTL preserved, no silent extension)."""
+    existing = db.execute(
+        "SELECT expires_ts FROM selfcare_entries WHERE ip = ? AND removed_ts IS NULL",
+        (ip,),
+    ).fetchone()
+    if existing is not None:
+        return False
+    expires = ts + ttl_sec
+    db.execute(
+        "INSERT OR REPLACE INTO selfcare_entries "
+        "(ip, added_ts, expires_ts, source, categories, removed_ts) "
+        "VALUES (?, ?, ?, ?, ?, NULL)",
+        (ip, ts, expires, source, categories),
+    )
+    try:
+        subprocess.run(
+            ["/sbin/pfctl", "-t", PF_TABLE_SELFCARE, "-T", "add", ip],
+            check=False, capture_output=True, timeout=5,
+        )
+    except Exception as exc:
+        log(f"selfcare pfctl add {ip} failed: {exc}")
+    return True
+
+
 def submit_report(api_key: str, ip: str, categories: str, comment: str) -> tuple[bool, str, int | None]:
     try:
         r = requests.post(
@@ -244,21 +270,21 @@ def main() -> int:
     for ip, info in sorted(hits.items(), key=lambda x: -x[1]["count"]):
         if info["count"] < min_hits:
             continue
-        if already_today + sent >= daily_quota:
-            print("daily quota reached, stopping")
-            break
         if should_skip_ip(db, ip, rate_min):
             continue
 
         ports = ",".join(sorted(info["ports"]))[:60]
         protos = ",".join(sorted(info["protos"]))[:30]
         ts = int(time.time())
+        quota_full = (already_today + sent >= daily_quota)
 
-        # Optional: pre-check against AbuseIPDB. Skip if nobody else flagged it yet.
+        # Pre-check (independent quota at AbuseIPDB: /check separate from /report).
+        # Even when daily report quota is exhausted, we keep doing pre-checks so
+        # that confirmed-bad IPs can still feed the local self-defense table.
+        precheck_passed = False
         if precheck:
             conf, check_msg = check_abuseipdb(api_key, ip)
             if conf is None:
-                # API error — don't skip silently, but don't report either
                 db.execute(
                     "INSERT OR REPLACE INTO reports (ts, ip, categories, ok, message) VALUES (?, ?, ?, ?, ?)",
                     (ts, ip, default_categories, 0, f"SKIP: precheck failed ({check_msg})"[:200]),
@@ -270,6 +296,23 @@ def main() -> int:
                     (ts, ip, default_categories, 0, f"SKIP: precheck confidence {conf}<{precheck_min_conf} ({check_msg})"[:200]),
                 )
                 continue
+            precheck_passed = True
+
+        # Self-defense add as soon as pre-check confirms badness — does not
+        # depend on whether we still have report quota or are in dry-run.
+        # When pre-check is off we keep the old behaviour (add only after a
+        # successful report) since we have no confidence signal here.
+        if selfcare_on and precheck_passed:
+            if selfcare_add(db, ip, ts, selfcare_ttl, default_categories, "precheck"):
+                log(f"selfcare add {ip} (precheck conf>={precheck_min_conf})")
+
+        # Submit path — skip when daily quota is exhausted.
+        if quota_full:
+            db.execute(
+                "INSERT OR REPLACE INTO reports (ts, ip, categories, ok, message) VALUES (?, ?, ?, ?, ?)",
+                (ts, ip, default_categories, 0, f"SKIP: daily quota {daily_quota} reached"[:200]),
+            )
+            continue
 
         comment = f"Blocked by OPNsense firewall; {info['count']} hits, proto={protos}, ports={ports}"
 
@@ -295,30 +338,10 @@ def main() -> int:
             sent += 1
             log(f"reported {ip} ({info['count']} hits) -> {msg}")
 
-            # Self-defense: also drop this IP into our local pf table so it
-            # stops hitting us while AbuseIPDB catches up. ttl_hours-driven,
-            # cleanup cron removes expired entries. Keep existing expiry if
-            # the IP is already tracked (don't extend silently).
-            if selfcare_on:
-                existing = db.execute(
-                    "SELECT expires_ts FROM selfcare_entries WHERE ip = ? AND removed_ts IS NULL",
-                    (ip,),
-                ).fetchone()
-                if existing is None:
-                    expires = ts + selfcare_ttl
-                    db.execute(
-                        "INSERT OR REPLACE INTO selfcare_entries "
-                        "(ip, added_ts, expires_ts, source, categories, removed_ts) "
-                        "VALUES (?, ?, ?, ?, ?, NULL)",
-                        (ip, ts, expires, "reporter", default_categories),
-                    )
-                    try:
-                        subprocess.run(
-                            ["/sbin/pfctl", "-t", PF_TABLE_SELFCARE, "-T", "add", ip],
-                            check=False, capture_output=True, timeout=5,
-                        )
-                    except Exception as exc:
-                        log(f"selfcare pfctl add {ip} failed: {exc}")
+            # Selfcare add via reporter path — only when pre-check is OFF
+            # (otherwise the precheck path above already added it).
+            if selfcare_on and not precheck:
+                selfcare_add(db, ip, ts, selfcare_ttl, default_categories, "reporter")
         else:
             log(f"report {ip} failed: {msg}")
             if "rate limited" in msg or (quota is not None and quota == 0):

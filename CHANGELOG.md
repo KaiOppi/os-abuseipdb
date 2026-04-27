@@ -20,6 +20,19 @@ First public beta. Feature-complete for the core use case (blacklist + reporter 
 
 ---
 
+## [0.2.3] — 2026-04-27
+
+### Changed
+- **Self-defense fills based on pre-check, not just on successful report.** When pre-check is on (default) and an IP passes the confidence threshold, it is now added to the local block list immediately, regardless of whether the actual `/report` call to AbuseIPDB went through. This means the self-defense table keeps growing even when:
+  - the daily report quota is exhausted (typical case for busy edges),
+  - the reporter is still in dry-run mode (24 h validation window),
+  - AbuseIPDB temporarily rejects a submit.
+
+  Pre-check uses its own AbuseIPDB endpoint quota (1000 `/check`/day on the free tier, separate from `/report`), so confidence checks survive even after report quota is gone.
+
+  When pre-check is **off**, behaviour is unchanged: self-defense only fills after a successful report.
+- Reporter no longer aborts the loop when daily report quota is hit. It now keeps doing pre-checks for the remaining candidates so the self-defense table can still be fed.
+
 ## [0.2.2] — 2026-04-24
 
 ### Fixed
