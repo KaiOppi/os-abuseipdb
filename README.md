@@ -5,7 +5,9 @@ OPNsense plugin for bidirectional [AbuseIPDB](https://www.abuseipdb.com) integra
 - **Blacklist** — downloads the AbuseIPDB blocklist into a pf table and auto-creates a firewall alias + WAN block rule.
 - **Reporter** — parses the OPNsense firewall log and submits attacker IPs back to AbuseIPDB (bidirectional participation in the threat-intelligence network).
 - **Self-Defense** — TTL-based local blocklist populated from reporter submits; closes the gap while AbuseIPDB's community catches up.
-- **Dashboard widget** — live stats (blocklist size, last download, quota, reports).
+- **Per-interface tracking** — every report and self-defense entry knows which uplink it came in over; useful for multi-WAN setups (failover or load-balance) to see *where* the attack pressure lands.
+- **Statistics tab** — per-interface counters and a 14-day trend for reports and self-defense additions; helps spot which uplink is the noisier target and how the load develops over time.
+- **Dashboard widget** — live stats (blocklist size, last download, quota, reports, self-defense active/total).
 - **Fire & forget** — cron jobs are created automatically when you enable the feature (daily download, 5-minute reporter cycles, hourly self-defense cleanup).
 
 > **Status:** public beta (v0.3.0). Running in production on two OPNsense boxes. Looking for community testers — please open an issue or a r/opnsense reply with feedback.
@@ -96,11 +98,29 @@ Trigger conditions for adding an IP to the self-defense table:
 - **With pre-check on** (default): IP is added as soon as `/api/v2/check` confirms `confidence >= precheck_min_confidence` — independent of whether the report itself goes through. This means self-defense keeps filling even when the daily report quota is exhausted, the reporter is in dry-run, or AbuseIPDB temporarily rejects the submit. Pre-check uses its own AbuseIPDB endpoint quota (1000 `/check`/day on the free tier, separate from `/report`).
 - **With pre-check off**: IP is added only after a successful real report, since there's no confidence signal otherwise (we won't blindly local-block on raw log hits).
 
-The current self-defense list is visible directly in the **Self-Defense** tab under the settings ("Currently blocked").
+The current self-defense list is visible directly in the **Self-Defense** tab under the settings ("Currently blocked"). Each entry shows the interface it came in over (e.g. `WAN`, `DSL`, `LWL`).
+
+### Statistics
+
+Tab **Statistics** — aggregated views over the data that the reporter and self-defense path collect:
+
+- **Per-interface counters**
+  - Self-defense: currently active and total ever added, broken down by interface
+  - Reports: today and total, broken down by interface
+
+  In multi-WAN setups (failover or load-balance) this answers *which uplink is the noisier target* — e.g. `WAN: 142, DSL: 31, LWL: 8`.
+
+- **14-day trend (daily buckets)**
+  - Reports submitted per day
+  - Self-defense IPs added per day
+
+  Helps see whether the attack pressure is steady, ramping up, or whether yesterday's spike was an outlier.
+
+The reporter writes the OPNsense interface **identifier** (`wan`, `opt1`, `opt2`, ...) — stable across renames. The friendly name (`WAN`, `DSL`, `LWL`) you assigned in *Interfaces → Assignments* is resolved to display only, so renaming an interface later does not invalidate historic data.
 
 ## Dashboard widget
 
-**Lobby → Dashboard → Add widget → "AbuseIPDB"** — shows blocklist size, last download time, API quota, reports-today/total.
+**Lobby → Dashboard → Add widget → "AbuseIPDB"** — shows blocklist size, last download time, API quota, reports today/total, and self-defense entries (active / total).
 
 ## Verification
 
@@ -155,6 +175,7 @@ pkg remove os-abuseipdb
 - [x] Quick-jump navigation to alias / rule / cron / log
 - [x] FreeBSD pkg + GitHub release
 - [x] Self-Defense local blocklist (TTL-based, auto-populated from reporter submits)
+- [x] Per-interface tracking + Statistics tab (per-interface counters, 14-day trend)
 
 **Open:**
 - [ ] Rule-to-category mapping UI (currently default categories only)
