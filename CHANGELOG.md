@@ -3,6 +3,11 @@
 All notable changes to this project are documented here.
 The format roughly follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project uses [Semantic Versioning](https://semver.org/).
 
+## [0.3.1] — 2026-04-28
+
+### Fixed
+- **Reports table message column showed `&lt;` instead of `<`.** Pre-check skip messages like `SKIP: precheck confidence 0<25 (1 reports)` got HTML-entity-encoded twice in some browsers due to the `$('<div>').text(s).html()` round-trip we used for XSS escaping. Replaced with proper jQuery DOM construction (`$('<td>').text(...)`) so user-provided strings are inserted as plain text and never need HTML-entity encoding. Also applied to the Self-Defense "Currently blocked" table for the same reason.
+
 ## [0.3.0] — 2026-04-28
 
 ### Added

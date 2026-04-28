@@ -133,15 +133,13 @@
                     tbody.append('<tr><td colspan="5" style="text-align:center;color:#888;padding:12px">{{ lang._("No active entries.") }}</td></tr>');
                 } else {
                     rows.forEach(function(r) {
-                        tbody.append(
-                            '<tr>' +
-                            '<td><tt>' + r.ip + '</tt></td>' +
-                            '<td>' + fmtIface(r.iface) + '</td>' +
-                            '<td>' + fmtTs(r.added_ts) + '</td>' +
-                            '<td>' + fmtTs(r.expires_ts) + ' (' + fmtDuration(r.remaining_sec) + ')</td>' +
-                            '<td>' + (r.categories || '') + '</td>' +
-                            '</tr>'
-                        );
+                        var $tr = $('<tr>');
+                        $tr.append($('<td>').append($('<tt>').text(r.ip)));
+                        $tr.append($('<td>').text(fmtIface(r.iface)));
+                        $tr.append($('<td>').text(fmtTs(r.added_ts)));
+                        $tr.append($('<td>').text(fmtTs(r.expires_ts) + ' (' + fmtDuration(r.remaining_sec) + ')'));
+                        $tr.append($('<td>').text(r.categories || ''));
+                        tbody.append($tr);
                     });
                 }
             }
@@ -160,17 +158,19 @@
                     tbody.append('<tr><td colspan="6" style="text-align:center;color:#888;padding:12px">{{ lang._("No reports yet.") }}</td></tr>');
                 } else {
                     rows.forEach(function(r) {
-                        var cls = r.ok ? 'ok' : 'warn';
-                        tbody.append(
-                            '<tr>' +
-                            '<td>' + fmtTs(r.ts) + '</td>' +
-                            '<td><tt>' + r.ip + '</tt></td>' +
-                            '<td>' + fmtIface(r.iface) + '</td>' +
-                            '<td>' + r.categories + '</td>' +
-                            '<td class="' + cls + '">' + (r.ok ? 'OK' : 'failed') + '</td>' +
-                            '<td>' + $('<div>').text(r.message).html() + '</td>' +
-                            '</tr>'
-                        );
+                        // Build the row with jQuery objects so .text(...) escapes
+                        // user-provided strings safely AND renders them as plain
+                        // text. Earlier we used .html(div.text(s).html()) which
+                        // round-tripped < / > / & through HTML entities and could
+                        // leave them visible as `&lt;` in some browsers.
+                        var $tr = $('<tr>');
+                        $tr.append($('<td>').text(fmtTs(r.ts)));
+                        $tr.append($('<td>').append($('<tt>').text(r.ip)));
+                        $tr.append($('<td>').text(fmtIface(r.iface)));
+                        $tr.append($('<td>').text(r.categories || ''));
+                        $tr.append($('<td>').addClass(r.ok ? 'ok' : 'warn').text(r.ok ? 'OK' : 'failed'));
+                        $tr.append($('<td>').text(r.message || ''));
+                        tbody.append($tr);
                     });
                 }
                 $("#reportsLastFetch").text("{{ lang._('last fetched:') }} " + new Date().toLocaleTimeString());
