@@ -24,7 +24,7 @@ def main() -> int:
     if os.path.exists(os.path.join(STATE_DIR, "state.sqlite")):
         db = get_db()
         for r in db.execute(
-            "SELECT ts, ip, categories, ok, message FROM reports ORDER BY ts DESC LIMIT ?",
+            "SELECT ts, ip, categories, ok, message, iface FROM reports ORDER BY ts DESC LIMIT ?",
             (limit,),
         ):
             rows.append({
@@ -33,6 +33,7 @@ def main() -> int:
                 "categories": r[2],
                 "ok": bool(r[3]),
                 "message": r[4] or "",
+                "iface": r[5] or "",
             })
         db.close()
 

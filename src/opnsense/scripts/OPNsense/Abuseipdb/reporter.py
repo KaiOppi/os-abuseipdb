@@ -21,7 +21,8 @@ import subprocess
 import sys
 import time
 from collections import defaultdict
-from _common import API_BASE, PF_TABLE_SELFCARE, STATE_DIR, die, ensure_state_dir, get_config, get_db, log
+from _common import (API_BASE, PF_TABLE_SELFCARE, STATE_DIR, die,
+                     ensure_state_dir, get_config, get_db, get_iface_map, log)
 
 try:
     import requests
@@ -73,7 +74,8 @@ def check_abuseipdb(api_key: str, ip: str) -> tuple[int | None, str]:
 
 
 def parse_line(line: str):
-    """Return (rule_label, action, src_ip, dst_port, proto) or None."""
+    """Return (rule_label, action, src_ip, dst_port, proto, ifname) or None.
+    ifname is the physical interface name from the log (e.g. 'vtnet0', 'igb1')."""
     m = META_SPLIT.search(line)
     if not m:
         return None
@@ -83,6 +85,7 @@ def parse_line(line: str):
         return None
     try:
         rule_label = parts[3]
+        ifname = parts[4]
         action = parts[6]
         if action != "block":
             return None
@@ -92,7 +95,7 @@ def parse_line(line: str):
         proto = parts[16]
         src_ip = parts[18]
         dst_port = parts[21] if len(parts) > 21 else ""
-        return rule_label, action, src_ip, dst_port, proto
+        return rule_label, action, src_ip, dst_port, proto, ifname
     except (IndexError, ValueError):
         return None
 
@@ -162,7 +165,7 @@ def should_skip_ip(db, ip: str, rate_limit_min: int) -> bool:
     return (time.time() - row[0]) < rate_limit_min * 60
 
 
-def selfcare_add(db, ip: str, ts: int, ttl_sec: int, categories: str, source: str) -> bool:
+def selfcare_add(db, ip: str, ts: int, ttl_sec: int, categories: str, source: str, iface: str = "") -> bool:
     """Insert IP into selfcare_entries + pf table. Return True if newly added,
     False if already tracked (existing TTL preserved, no silent extension)."""
     existing = db.execute(
@@ -174,9 +177,9 @@ def selfcare_add(db, ip: str, ts: int, ttl_sec: int, categories: str, source: st
     expires = ts + ttl_sec
     db.execute(
         "INSERT OR REPLACE INTO selfcare_entries "
-        "(ip, added_ts, expires_ts, source, categories, removed_ts) "
-        "VALUES (?, ?, ?, ?, ?, NULL)",
-        (ip, ts, expires, source, categories),
+        "(ip, added_ts, expires_ts, source, categories, iface, removed_ts) "
+        "VALUES (?, ?, ?, ?, ?, ?, NULL)",
+        (ip, ts, expires, source, categories, iface),
     )
     try:
         subprocess.run(
@@ -238,13 +241,19 @@ def main() -> int:
         print("no new log lines")
         return 0
 
+    # Build phys-name → identifier map once (e.g. "vtnet0" → "wan", "igb1" → "opt1").
+    # We store the identifier (stable, never changes) — friendly description is
+    # resolved at display time so renaming an interface doesn't invalidate
+    # historic data.
+    iface_map = get_iface_map()
+
     # Aggregate hits per IP
-    hits: dict[str, dict] = defaultdict(lambda: {"count": 0, "labels": set(), "ports": set(), "protos": set()})
+    hits: dict[str, dict] = defaultdict(lambda: {"count": 0, "labels": set(), "ports": set(), "protos": set(), "ifaces": set()})
     for line in lines:
         parsed = parse_line(line)
         if not parsed:
             continue
-        rule_label, action, src_ip, dst_port, proto = parsed
+        rule_label, action, src_ip, dst_port, proto, ifname = parsed
         if is_private(src_ip):
             continue
         # Skip hits from our own rule
@@ -257,6 +266,11 @@ def main() -> int:
             hits[src_ip]["ports"].add(dst_port)
         if proto:
             hits[src_ip]["protos"].add(proto)
+        # Map physical interface to OPNsense identifier; unknown phys names
+        # are stored as-is so the user can still see something useful.
+        ident = iface_map.get(ifname, ifname)
+        if ident:
+            hits[src_ip]["ifaces"].add(ident)
 
     if not hits:
         print(f"processed {len(lines)} log lines, no public-IP block hits")
@@ -275,6 +289,7 @@ def main() -> int:
 
         ports = ",".join(sorted(info["ports"]))[:60]
         protos = ",".join(sorted(info["protos"]))[:30]
+        ifaces_csv = ",".join(sorted(info["ifaces"]))[:60]
         ts = int(time.time())
         quota_full = (already_today + sent >= daily_quota)
 
@@ -286,14 +301,14 @@ def main() -> int:
             conf, check_msg = check_abuseipdb(api_key, ip)
             if conf is None:
                 db.execute(
-                    "INSERT OR REPLACE INTO reports (ts, ip, categories, ok, message) VALUES (?, ?, ?, ?, ?)",
-                    (ts, ip, default_categories, 0, f"SKIP: precheck failed ({check_msg})"[:200]),
+                    "INSERT OR REPLACE INTO reports (ts, ip, categories, ok, message, iface) VALUES (?, ?, ?, ?, ?, ?)",
+                    (ts, ip, default_categories, 0, f"SKIP: precheck failed ({check_msg})"[:200], ifaces_csv),
                 )
                 continue
             if conf < precheck_min_conf:
                 db.execute(
-                    "INSERT OR REPLACE INTO reports (ts, ip, categories, ok, message) VALUES (?, ?, ?, ?, ?)",
-                    (ts, ip, default_categories, 0, f"SKIP: precheck confidence {conf}<{precheck_min_conf} ({check_msg})"[:200]),
+                    "INSERT OR REPLACE INTO reports (ts, ip, categories, ok, message, iface) VALUES (?, ?, ?, ?, ?, ?)",
+                    (ts, ip, default_categories, 0, f"SKIP: precheck confidence {conf}<{precheck_min_conf} ({check_msg})"[:200], ifaces_csv),
                 )
                 continue
             precheck_passed = True
@@ -303,14 +318,14 @@ def main() -> int:
         # When pre-check is off we keep the old behaviour (add only after a
         # successful report) since we have no confidence signal here.
         if selfcare_on and precheck_passed:
-            if selfcare_add(db, ip, ts, selfcare_ttl, default_categories, "precheck"):
-                log(f"selfcare add {ip} (precheck conf>={precheck_min_conf})")
+            if selfcare_add(db, ip, ts, selfcare_ttl, default_categories, "precheck", ifaces_csv):
+                log(f"selfcare add {ip} via {ifaces_csv} (precheck conf>={precheck_min_conf})")
 
         # Submit path — skip when daily quota is exhausted.
         if quota_full:
             db.execute(
-                "INSERT OR REPLACE INTO reports (ts, ip, categories, ok, message) VALUES (?, ?, ?, ?, ?)",
-                (ts, ip, default_categories, 0, f"SKIP: daily quota {daily_quota} reached"[:200]),
+                "INSERT OR REPLACE INTO reports (ts, ip, categories, ok, message, iface) VALUES (?, ?, ?, ?, ?, ?)",
+                (ts, ip, default_categories, 0, f"SKIP: daily quota {daily_quota} reached"[:200], ifaces_csv),
             )
             continue
 
@@ -318,17 +333,17 @@ def main() -> int:
 
         if dry_run:
             db.execute(
-                "INSERT OR REPLACE INTO reports (ts, ip, categories, ok, message) VALUES (?, ?, ?, ?, ?)",
-                (ts, ip, default_categories, 1, f"DRY-RUN: would report ({info['count']} hits)"[:200]),
+                "INSERT OR REPLACE INTO reports (ts, ip, categories, ok, message, iface) VALUES (?, ?, ?, ?, ?, ?)",
+                (ts, ip, default_categories, 1, f"DRY-RUN: would report ({info['count']} hits)"[:200], ifaces_csv),
             )
             sent += 1
-            log(f"dry-run: would report {ip} ({info['count']} hits)")
+            log(f"dry-run: would report {ip} ({info['count']} hits) via {ifaces_csv}")
             continue
 
         ok, msg, quota = submit_report(api_key, ip, default_categories, comment)
         db.execute(
-            "INSERT OR REPLACE INTO reports (ts, ip, categories, ok, message) VALUES (?, ?, ?, ?, ?)",
-            (ts, ip, default_categories, 1 if ok else 0, msg[:200]),
+            "INSERT OR REPLACE INTO reports (ts, ip, categories, ok, message, iface) VALUES (?, ?, ?, ?, ?, ?)",
+            (ts, ip, default_categories, 1 if ok else 0, msg[:200], ifaces_csv),
         )
         if ok:
             db.execute(
@@ -336,12 +351,12 @@ def main() -> int:
                 (ip, ts),
             )
             sent += 1
-            log(f"reported {ip} ({info['count']} hits) -> {msg}")
+            log(f"reported {ip} ({info['count']} hits) via {ifaces_csv} -> {msg}")
 
             # Selfcare add via reporter path — only when pre-check is OFF
             # (otherwise the precheck path above already added it).
             if selfcare_on and not precheck:
-                selfcare_add(db, ip, ts, selfcare_ttl, default_categories, "reporter")
+                selfcare_add(db, ip, ts, selfcare_ttl, default_categories, "reporter", ifaces_csv)
         else:
             log(f"report {ip} failed: {msg}")
             if "rate limited" in msg or (quota is not None and quota == 0):

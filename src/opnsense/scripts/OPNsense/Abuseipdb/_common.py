@@ -52,6 +52,11 @@ def ensure_state_dir() -> None:
     os.makedirs(STATE_DIR, exist_ok=True)
 
 
+def _column_exists(db, table: str, col: str) -> bool:
+    row = db.execute(f"PRAGMA table_info({table})").fetchall()
+    return any(r[1] == col for r in row)
+
+
 def get_db() -> sqlite3.Connection:
     ensure_state_dir()
     db = sqlite3.connect(STATE_DB)
@@ -90,8 +95,56 @@ def get_db() -> sqlite3.Connection:
             removed_ts INTEGER
         )
     """)
+    # Schema migrations — additive only, never destructive.
+    if not _column_exists(db, "reports", "iface"):
+        db.execute("ALTER TABLE reports ADD COLUMN iface TEXT")
+    if not _column_exists(db, "selfcare_entries", "iface"):
+        db.execute("ALTER TABLE selfcare_entries ADD COLUMN iface TEXT")
     db.commit()
     return db
+
+
+def get_iface_map() -> dict:
+    """Build a phys-name → identifier map from /conf/config.xml. e.g.
+    {"vtnet0": "wan", "igb1": "opt1"}. Used to resolve filter-log
+    interface names to OPNsense identifiers."""
+    out = {}
+    if not os.path.exists(CONFIG_XML):
+        return out
+    try:
+        root = ET.parse(CONFIG_XML).getroot()
+        ifaces = root.find("./interfaces")
+        if ifaces is None:
+            return out
+        for child in ifaces:
+            ident = child.tag
+            if_node = child.find("if")
+            if if_node is not None and if_node.text:
+                out[if_node.text.strip()] = ident
+    except Exception:
+        pass
+    return out
+
+
+def get_iface_descr_map() -> dict:
+    """identifier → friendly description (the 'descr' field in OPNsense
+    interface settings, falling back to identifier-uppercase if unset)."""
+    out = {}
+    if not os.path.exists(CONFIG_XML):
+        return out
+    try:
+        root = ET.parse(CONFIG_XML).getroot()
+        ifaces = root.find("./interfaces")
+        if ifaces is None:
+            return out
+        for child in ifaces:
+            ident = child.tag
+            descr = child.find("descr")
+            out[ident] = (descr.text.strip() if descr is not None and descr.text
+                          else ident.upper())
+    except Exception:
+        pass
+    return out
 
 
 def get_config() -> dict:

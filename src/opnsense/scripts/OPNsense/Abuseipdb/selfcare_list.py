@@ -22,7 +22,7 @@ def main() -> int:
     db = get_db()
     now = int(time.time())
     rows = db.execute(
-        "SELECT ip, added_ts, expires_ts, source, categories "
+        "SELECT ip, added_ts, expires_ts, source, categories, iface "
         "FROM selfcare_entries "
         "WHERE removed_ts IS NULL AND expires_ts > ? "
         "ORDER BY added_ts DESC LIMIT ?",
@@ -36,6 +36,7 @@ def main() -> int:
             "remaining_sec": max(0, r[2] - now),
             "source": r[3] or "",
             "categories": r[4] or "",
+            "iface": r[5] or "",
         }
         for r in rows
     ]

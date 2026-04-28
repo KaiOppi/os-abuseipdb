@@ -3,6 +3,21 @@
 All notable changes to this project are documented here.
 The format roughly follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project uses [Semantic Versioning](https://semver.org/).
 
+## [0.3.0] — 2026-04-28
+
+### Added
+- **Per-interface tracking and statistics.** Reporter now reads the physical interface from each filter-log entry, maps it to the OPNsense identifier (`wan`, `opt1`, ...) and stores it alongside every report and self-defense entry. Multi-interface hits are stored as a comma-separated list (one IP can come in over several WANs in load-balance setups). Stable identifier is stored, not the friendly name — renaming the interface later doesn't invalidate historic data.
+- **New "Statistics" tab** in the plugin GUI:
+  - Self-defense currently active and total per interface
+  - Reports today and total per interface
+  - Reports per day for the last 14 days (CSS bar chart)
+  - Self-defense additions per day for the last 14 days (CSS bar chart)
+- **"Interface" column** in the Reports log table and the Self-Defense "Currently blocked" table. Friendly names are resolved to `descr` from `config.xml` at display time.
+- Stats endpoint exposes `iface_descr` (identifier → friendly name map), `by_iface.{selfcare_active,selfcare_total,reports_today,reports_total}` and `daily.{reports,selfcare_added}` (14-day series).
+
+### Migrations
+- SQLite: added `iface` column to `reports` and `selfcare_entries` (additive, existing rows keep `NULL`).
+
 ## [0.2.4] — 2026-04-27
 
 ### Added

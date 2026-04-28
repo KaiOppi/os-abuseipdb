@@ -31,6 +31,7 @@
             callback = function(resp) {
                 if (!resp || resp.status !== 'ok') return;
                 var d = resp.data;
+                ifaceDescr = d.iface_descr || {};
                 $("#stat_bl_count").text(d.blocklist_ips.toLocaleString());
                 $("#stat_bl_last").text(fmtTs(d.blocklist_last_update));
                 $("#stat_last_run").text(fmtTs(d.last_run));
@@ -42,8 +43,60 @@
                 $("#stat_reports_total").text(d.reports_total);
                 $("#stat_selfcare_active").text((d.selfcare_active || 0).toLocaleString());
                 $("#stat_selfcare_total").text((d.selfcare_total || 0).toLocaleString());
+                renderStatsTab(d);
             }
         );
+    }
+
+    function renderIfaceTable(targetSel, dict) {
+        var $t = $(targetSel).empty();
+        var keys = Object.keys(dict || {}).sort(function(a,b){ return (dict[b]||0) - (dict[a]||0); });
+        if (keys.length === 0) {
+            $t.append('<tr><td colspan="2" style="color:#888;padding:6px">—</td></tr>');
+            return;
+        }
+        var max = Math.max.apply(null, keys.map(function(k){ return dict[k]; }));
+        keys.forEach(function(k) {
+            var pct = max > 0 ? Math.round(dict[k] / max * 100) : 0;
+            var label = ifaceDescr[k] || k;
+            $t.append(
+                '<tr>' +
+                '<td style="white-space:nowrap;padding-right:8px"><b>' + label + '</b> <span style="color:#888;font-size:11px">' + k + '</span></td>' +
+                '<td style="width:100%">' +
+                '<div style="background:#3498db;color:#fff;padding:2px 6px;width:' + Math.max(pct, 5) + '%;min-width:30px;font-size:11px">' + dict[k].toLocaleString() + '</div>' +
+                '</td></tr>'
+            );
+        });
+    }
+
+    function renderDailyChart(targetSel, series) {
+        var $t = $(targetSel).empty();
+        if (!series || series.length === 0) {
+            $t.append('<tr><td style="color:#888">—</td></tr>');
+            return;
+        }
+        var max = Math.max.apply(null, series.map(function(p){ return p.count; }));
+        series.forEach(function(p) {
+            var pct = max > 0 ? Math.round(p.count / max * 100) : 0;
+            var d = new Date(p.day);
+            var dayLbl = d.toLocaleDateString(undefined, {weekday:'short', day:'2-digit', month:'2-digit'});
+            $t.append(
+                '<tr>' +
+                '<td style="white-space:nowrap;padding-right:8px;font-size:11px">' + dayLbl + '</td>' +
+                '<td style="width:100%">' +
+                '<div style="background:#27ae60;color:#fff;padding:2px 6px;width:' + Math.max(pct, 1) + '%;min-width:30px;font-size:11px">' + p.count.toLocaleString() + '</div>' +
+                '</td></tr>'
+            );
+        });
+    }
+
+    function renderStatsTab(d) {
+        renderIfaceTable("#stats_iface_sc_active tbody", d.by_iface ? d.by_iface.selfcare_active : {});
+        renderIfaceTable("#stats_iface_sc_total tbody",  d.by_iface ? d.by_iface.selfcare_total  : {});
+        renderIfaceTable("#stats_iface_rep_today tbody", d.by_iface ? d.by_iface.reports_today   : {});
+        renderIfaceTable("#stats_iface_rep_total tbody", d.by_iface ? d.by_iface.reports_total   : {});
+        renderDailyChart("#stats_daily_reports tbody",   d.daily ? d.daily.reports         : []);
+        renderDailyChart("#stats_daily_selfcare tbody",  d.daily ? d.daily.selfcare_added  : []);
     }
 
     function fmtDuration(sec) {
@@ -54,6 +107,16 @@
         if (d > 0) return d + 'd ' + h + 'h';
         if (h > 0) return h + 'h ' + m + 'm';
         return m + 'm';
+    }
+
+    // identifier → friendly description, populated by refreshStats.
+    var ifaceDescr = {};
+    function fmtIface(csv) {
+        if (!csv) return '—';
+        return csv.split(',').map(function(s){
+            s = s.trim(); if (!s) return '';
+            return ifaceDescr[s] || s;
+        }).filter(Boolean).join(', ');
     }
 
     function refreshSelfcare() {
@@ -67,12 +130,13 @@
                 $("#selfcareTotal").text(total);
                 var tbody = $("#selfcareTable tbody").empty();
                 if (rows.length === 0) {
-                    tbody.append('<tr><td colspan="4" style="text-align:center;color:#888;padding:12px">{{ lang._("No active entries.") }}</td></tr>');
+                    tbody.append('<tr><td colspan="5" style="text-align:center;color:#888;padding:12px">{{ lang._("No active entries.") }}</td></tr>');
                 } else {
                     rows.forEach(function(r) {
                         tbody.append(
                             '<tr>' +
                             '<td><tt>' + r.ip + '</tt></td>' +
+                            '<td>' + fmtIface(r.iface) + '</td>' +
                             '<td>' + fmtTs(r.added_ts) + '</td>' +
                             '<td>' + fmtTs(r.expires_ts) + ' (' + fmtDuration(r.remaining_sec) + ')</td>' +
                             '<td>' + (r.categories || '') + '</td>' +
@@ -93,7 +157,7 @@
                 var rows = resp.data.rows;
                 var tbody = $("#reportsTable tbody").empty();
                 if (rows.length === 0) {
-                    tbody.append('<tr><td colspan="5" style="text-align:center;color:#888;padding:12px">{{ lang._("No reports yet.") }}</td></tr>');
+                    tbody.append('<tr><td colspan="6" style="text-align:center;color:#888;padding:12px">{{ lang._("No reports yet.") }}</td></tr>');
                 } else {
                     rows.forEach(function(r) {
                         var cls = r.ok ? 'ok' : 'warn';
@@ -101,6 +165,7 @@
                             '<tr>' +
                             '<td>' + fmtTs(r.ts) + '</td>' +
                             '<td><tt>' + r.ip + '</tt></td>' +
+                            '<td>' + fmtIface(r.iface) + '</td>' +
                             '<td>' + r.categories + '</td>' +
                             '<td class="' + cls + '">' + (r.ok ? 'OK' : 'failed') + '</td>' +
                             '<td>' + $('<div>').text(r.message).html() + '</td>' +
@@ -185,6 +250,7 @@
             var href = $(e.target).attr('href');
             if (href === '#logtab') refreshReports();
             if (href === '#selfcare') refreshSelfcare();
+            if (href === '#statstab') refreshStats();
         });
         $("#refreshReportsAct").click(refreshReports);
         $("#refreshSelfcareAct").click(refreshSelfcare);
@@ -245,6 +311,7 @@
     <li><a data-toggle="tab" href="#reporter">{{ lang._('Reporter') }}</a></li>
     <li><a data-toggle="tab" href="#selfcare">{{ lang._('Self-Defense') }}</a></li>
     <li><a data-toggle="tab" href="#logtab">{{ lang._('Log') }}</a></li>
+    <li><a data-toggle="tab" href="#statstab">{{ lang._('Statistics') }}</a></li>
 </ul>
 
 <div id="frm_all" class="tab-content content-box">
@@ -277,6 +344,7 @@
                 <thead>
                     <tr>
                         <th>{{ lang._('IP') }}</th>
+                        <th>{{ lang._('Interface') }}</th>
                         <th>{{ lang._('Added') }}</th>
                         <th>{{ lang._('Expires') }}</th>
                         <th>{{ lang._('Categories') }}</th>
@@ -299,6 +367,7 @@
                 <tr>
                     <th>{{ lang._('Time') }}</th>
                     <th>{{ lang._('IP') }}</th>
+                    <th>{{ lang._('Interface') }}</th>
                     <th>{{ lang._('Categories') }}</th>
                     <th>{{ lang._('Result') }}</th>
                     <th>{{ lang._('Message') }}</th>
@@ -306,6 +375,37 @@
             </thead>
             <tbody></tbody>
         </table>
+    </div>
+    <div id="statstab" class="tab-pane fade" style="padding:10px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px">
+            <div>
+                <h4 style="margin-top:0">{{ lang._('Self-defense — currently active per interface') }}</h4>
+                <table id="stats_iface_sc_active" style="width:100%;font-size:12px"><tbody></tbody></table>
+            </div>
+            <div>
+                <h4 style="margin-top:0">{{ lang._('Self-defense — total ever added per interface') }}</h4>
+                <table id="stats_iface_sc_total" style="width:100%;font-size:12px"><tbody></tbody></table>
+            </div>
+            <div>
+                <h4 style="margin-top:0">{{ lang._('Reports today per interface') }}</h4>
+                <table id="stats_iface_rep_today" style="width:100%;font-size:12px"><tbody></tbody></table>
+            </div>
+            <div>
+                <h4 style="margin-top:0">{{ lang._('Reports total per interface') }}</h4>
+                <table id="stats_iface_rep_total" style="width:100%;font-size:12px"><tbody></tbody></table>
+            </div>
+        </div>
+        <hr style="margin:20px 0">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px">
+            <div>
+                <h4 style="margin-top:0">{{ lang._('Reports — last 14 days') }}</h4>
+                <table id="stats_daily_reports" style="width:100%;font-size:12px"><tbody></tbody></table>
+            </div>
+            <div>
+                <h4 style="margin-top:0">{{ lang._('Self-defense additions — last 14 days') }}</h4>
+                <table id="stats_daily_selfcare" style="width:100%;font-size:12px"><tbody></tbody></table>
+            </div>
+        </div>
     </div>
 </div>
 
