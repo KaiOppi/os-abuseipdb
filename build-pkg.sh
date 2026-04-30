@@ -5,7 +5,7 @@
 set -eu
 
 NAME=os-abuseipdb
-VERSION=0.3.1
+VERSION=0.3.2
 ARCH=FreeBSD:14:amd64
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
@@ -104,6 +104,12 @@ if ! /usr/local/bin/python3 -c "import requests" >/dev/null 2>&1; then
 fi
 
 service configd restart 2>/dev/null || true
+
+# Invalidate webgui menu/ACL/model caches so the new menu entry shows up
+# without the user having to log out + back in. This is what the OPNsense core
+# helper does internally (system_cache_flush() — clears MenuSystem, ACL and
+# /var/lib/php/tmp/mdl_cache_*.json).
+/usr/local/etc/rc.configure_plugins POST_INSTALL >/dev/null 2>&1 || true
 EOF
 
 # Pre-deinstall: we leave alias + rule + cron in place so admins can re-enable
@@ -117,8 +123,27 @@ EOF
 cat > "$ROOT/work/+POST_DEINSTALL" <<'EOF'
 #!/bin/sh
 # keep /var/db/abuseipdb so reinstall keeps history; admin can rm -rf manually
+# Invalidate caches so the now-removed menu entry disappears immediately.
+/usr/local/etc/rc.configure_plugins POST_DEINSTALL >/dev/null 2>&1 || true
 :
 EOF
+
+# Embed +POST_INSTALL / +POST_DEINSTALL into the manifest as a `scripts: { ... }`
+# block. Modern FreeBSD pkg(8) (2.x) ignores stand-alone +POST_INSTALL files in
+# the metadata dir — scripts MUST live inside the manifest itself, JSON-escaped.
+# (We keep the heredocs above for readability and let python3 do the escaping.)
+python3 - "$ROOT/work/+MANIFEST" \
+        "$ROOT/work/+POST_INSTALL" \
+        "$ROOT/work/+POST_DEINSTALL" <<'PYEOF'
+import json, sys
+manifest, pi, pd = sys.argv[1], sys.argv[2], sys.argv[3]
+with open(pi) as f: post_install = f.read()
+with open(pd) as f: post_deinstall = f.read()
+block = "scripts: {\n    post-install: %s,\n    post-deinstall: %s\n}\n" % (
+    json.dumps(post_install), json.dumps(post_deinstall))
+with open(manifest, "a") as f:
+    f.write(block)
+PYEOF
 
 # Generate a plist from the staged tree — paths relative to prefix (/usr/local).
 ( cd "$STAGE/usr/local" && find . -type f | sed 's|^\./||' ) > "$ROOT/work/pkg-plist"

@@ -10,7 +10,7 @@ OPNsense plugin for bidirectional [AbuseIPDB](https://www.abuseipdb.com) integra
 - **Dashboard widget** — live stats (blocklist size, last download, quota, reports, self-defense active/total).
 - **Fire & forget** — cron jobs are created automatically when you enable the feature (daily download, 5-minute reporter cycles, hourly self-defense cleanup).
 
-> **Status:** public beta (v0.3.1). Running in production on three OPNsense boxes. Looking for community testers — please open an issue or a r/opnsense reply with feedback.
+> **Status:** public beta (v0.3.2). Running in production on three OPNsense boxes. Looking for community testers — please open an issue or a r/opnsense reply with feedback.
 
 ## Screenshots
 
@@ -34,13 +34,12 @@ pkg install -y py313-requests   # for Python 3.13 (OPNsense 26.1.5+)
 # pkg install -y py311-requests # for older 26.1.x
 
 # 2. Install the plugin
-pkg add https://github.com/KaiOppi/os-abuseipdb/releases/download/v0.3.1/os-abuseipdb-0.3.1.pkg
-
-# 3. Reload configd so the new actions become visible
-service configd restart
+pkg add https://github.com/KaiOppi/os-abuseipdb/releases/download/v0.3.2/os-abuseipdb-0.3.2.pkg
 ```
 
-Log out and back in to the WebGUI, then go to **Firewall → AbuseIPDB**.
+Then go to **Firewall → AbuseIPDB**. (Since v0.3.2 the post-install hook
+invalidates the WebGUI menu/ACL caches automatically, so no logout+login
+or `service configd restart` is needed anymore.)
 
 ## Configuration
 

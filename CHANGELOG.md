@@ -3,6 +3,13 @@
 All notable changes to this project are documented here.
 The format roughly follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project uses [Semantic Versioning](https://semver.org/).
 
+## [0.3.2] — 2026-04-30
+
+### Fixed
+- **`Firewall → AbuseIPDB` menu entry not visible after fresh install.** Reported by a community tester on OPNsense 26.1.6_2 — first external bug report 🎉. Root cause: our `+POST_INSTALL` only ran `service configd restart`, which has zero effect on the WebGUI's `MenuSystem` and `ACL` caches. The OPNsense core ships a helper for exactly this case (`/usr/local/etc/rc.configure_plugins POST_INSTALL` → `system_cache_flush()` → invalidates `MenuSystem`, `ACL` and `/var/lib/php/tmp/mdl_cache_*.json`). We now call it from both `+POST_INSTALL` and `+POST_DEINSTALL`, so the menu entry appears (and disappears on uninstall) immediately, without logout+login or a manual `configctl webgui restart`.
+
+  Workaround for users still on 0.3.1 or earlier: add the AbuseIPDB dashboard widget (it has a config shortcut) or open `https://<your-opnsense>/ui/abuseipdb/` directly. Or: log out and back in.
+
 ## [0.3.1] — 2026-04-28
 
 ### Fixed
