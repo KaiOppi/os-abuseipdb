@@ -122,6 +122,16 @@ def get_db() -> sqlite3.Connection:
         db.execute("ALTER TABLE reports ADD COLUMN iface TEXT")
     if not _column_exists(db, "selfcare_entries", "iface"):
         db.execute("ALTER TABLE selfcare_entries ADD COLUMN iface TEXT")
+    # v0.4.1: per-IP hit counter for the perma-block list.
+    # cumulative_hits  = total over all reboots (delta-tracked from pf)
+    # pf_last_seen     = pf counter at last sampling — for delta computation
+    # last_hit_ts      = unix-ts of the last sample where the counter advanced
+    if not _column_exists(db, "permaban", "cumulative_hits"):
+        db.execute("ALTER TABLE permaban ADD COLUMN cumulative_hits INTEGER NOT NULL DEFAULT 0")
+    if not _column_exists(db, "permaban", "pf_last_seen"):
+        db.execute("ALTER TABLE permaban ADD COLUMN pf_last_seen INTEGER NOT NULL DEFAULT 0")
+    if not _column_exists(db, "permaban", "last_hit_ts"):
+        db.execute("ALTER TABLE permaban ADD COLUMN last_hit_ts INTEGER NOT NULL DEFAULT 0")
     db.commit()
     return db
 

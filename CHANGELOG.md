@@ -3,6 +3,18 @@
 All notable changes to this project are documented here.
 The format roughly follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project uses [Semantic Versioning](https://semver.org/).
 
+## [0.4.1] — 2026-05-06
+
+### Added
+- **Per-IP hit counter on the Perma-Block list.** Two new columns in the Perma-Block tab: **Hits** (cumulative total over reboots) and **Last hit** (timestamp of the last counter advance). The Hits cell additionally shows a small "seit Boot" line with the current pf-session counter.
+- A new sampler script `permaban_count.py` runs from cron every 5 min, reads the in-memory pf-table counters (`pfctl -t abuseipdb_permaban -T show -vv`), computes the per-IP delta against the last sample, and folds it into the persistent total. Reboot-safe: if the kernel counter is lower than the last sample (zeroed by reboot or `pfctl -T zero`), the script treats the new value as the post-reboot delta. Resource cost is negligible — ~50 ms per run on a typical permaban table.
+- New REST endpoint payload: `permaban_list` now returns `hits`, `current_session`, and `last_hit_ts` fields per row.
+- New configd action: `abuseipdb permaban_count`.
+- New cron job (auto-installed when permaban is enabled): "os-abuseipdb: perma-block hit counter sampler" — every 5 min.
+
+### Migrations
+- SQLite: three new columns on the existing `permaban` table — `cumulative_hits`, `pf_last_seen`, `last_hit_ts` — all additive with safe defaults of 0. Existing rows start at 0 hits and accrue from the first cron sample after upgrade.
+
 ## [0.4.0] — 2026-05-06
 
 ### Added

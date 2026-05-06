@@ -488,6 +488,17 @@ $dirty_cron |= ensure_cron(
     $plugin_enabled && $permaban_on
 );
 
+// Perma-Block hit counter sampler — every 5 min. Reads pf table counters
+// (in-memory kernel struct, ~50ms) and persists deltas in the DB so totals
+// survive reboots.
+$dirty_cron |= ensure_cron(
+    $cron_mdl,
+    "os-abuseipdb: perma-block hit counter sampler",
+    "abuseipdb permaban_count",
+    "*/5", "*",
+    $plugin_enabled && $permaban_on
+);
+
 if ($dirty_cron) {
     $errs = $cron_mdl->performValidation();
     if (count($errs) > 0) {

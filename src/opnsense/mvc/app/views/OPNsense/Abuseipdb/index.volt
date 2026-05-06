@@ -161,12 +161,23 @@
                 $("#permabanTotal").text(resp.data.total);
                 var tbody = $("#permabanTable tbody").empty();
                 if (rows.length === 0) {
-                    tbody.append('<tr><td colspan="5" style="text-align:center;color:#888;padding:12px">{{ lang._("No Perma-Block entries.") }}</td></tr>');
+                    tbody.append('<tr><td colspan="7" style="text-align:center;color:#888;padding:12px">{{ lang._("No Perma-Block entries.") }}</td></tr>');
                 } else {
                     rows.forEach(function(r) {
                         var $tr = $('<tr>');
                         $tr.append($('<td>').append($('<tt>').text(r.ip)));
                         $tr.append($('<td>').text(fmtTs(r.added_ts)));
+                        // Hits cell: bold total + tiny session-counter underneath
+                        var hits = (r.hits || 0).toLocaleString();
+                        var session = (r.current_session || 0).toLocaleString();
+                        var $hitsTd = $('<td>').css('text-align', 'right').css('white-space', 'nowrap');
+                        $hitsTd.append($('<b>').text(hits));
+                        $hitsTd.append($('<div>').css({color: '#888', 'font-size': '11px'})
+                                                  .text('seit Boot: ' + session));
+                        $tr.append($hitsTd);
+                        // Last-hit cell
+                        $tr.append($('<td>').css('white-space', 'nowrap')
+                                            .text(r.last_hit_ts ? fmtTs(r.last_hit_ts) : '—'));
                         $tr.append($('<td>').text(r.source || ''));
                         $tr.append($('<td>').text(r.note || ''));
                         var $rm = $('<button class="btn btn-xs btn-default removePermabanBtn" title="Remove from Perma-Block"><span class="fa fa-trash"></span> Remove</button>');
@@ -506,6 +517,8 @@
                     <tr>
                         <th>{{ lang._('IP') }}</th>
                         <th>{{ lang._('Added') }}</th>
+                        <th style="text-align:right">{{ lang._('Hits') }}</th>
+                        <th>{{ lang._('Last hit') }}</th>
                         <th>{{ lang._('Source') }}</th>
                         <th>{{ lang._('Note') }}</th>
                         <th>{{ lang._('Action') }}</th>
