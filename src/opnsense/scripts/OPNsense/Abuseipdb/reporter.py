@@ -21,8 +21,9 @@ import subprocess
 import sys
 import time
 from collections import defaultdict
-from _common import (API_BASE, PF_TABLE_SELFCARE, STATE_DIR, die,
-                     ensure_state_dir, get_config, get_db, get_iface_map, log)
+from _common import (API_BASE, PF_TABLE_PERMABAN, PF_TABLE_SELFCARE,
+                     STATE_DIR, die, ensure_state_dir, get_config, get_db,
+                     get_iface_map, log)
 
 try:
     import requests
@@ -165,9 +166,76 @@ def should_skip_ip(db, ip: str, rate_limit_min: int) -> bool:
     return (time.time() - row[0]) < rate_limit_min * 60
 
 
+def is_permabanned(db, ip: str) -> bool:
+    return db.execute("SELECT 1 FROM permaban WHERE ip = ?", (ip,)).fetchone() is not None
+
+
+def history_upsert(db, ip: str, ts: int) -> int:
+    """Increment selfcare_history for an IP and return its new occurrence count.
+    Each call counts as one fresh selfcare hit (the caller decides when to call,
+    typically only on new selfcare additions, not on every reporter run)."""
+    row = db.execute(
+        "SELECT first_seen_ts, occurrences FROM selfcare_history WHERE ip = ?",
+        (ip,),
+    ).fetchone()
+    if row is None:
+        db.execute(
+            "INSERT INTO selfcare_history (ip, first_seen_ts, last_seen_ts, occurrences) "
+            "VALUES (?, ?, ?, 1)",
+            (ip, ts, ts),
+        )
+        return 1
+    new_count = row[1] + 1
+    db.execute(
+        "UPDATE selfcare_history SET last_seen_ts = ?, occurrences = ? WHERE ip = ?",
+        (ts, new_count, ip),
+    )
+    return new_count
+
+
+def maybe_promote(db, ip: str, ts: int, threshold: int, window_sec: int) -> bool:
+    """Promote IP to permaban if it has hit the threshold inside the window.
+    Returns True when promotion happened in this call."""
+    row = db.execute(
+        "SELECT occurrences, first_seen_ts, last_seen_ts FROM selfcare_history WHERE ip = ?",
+        (ip,),
+    ).fetchone()
+    if row is None:
+        return False
+    occ, first_ts, last_ts = row
+    if occ < threshold:
+        return False
+    # Window check: at least `threshold` events were observed inside the window.
+    # Approximation: if first_seen_ts is older than window we still allow it
+    # because the most recent event must be inside the window for the
+    # selfcare_add path that triggered this check. We require last_seen-first_seen
+    # not exceed window + slack? Simpler & user-friendly: trigger when
+    # occurrences crossed threshold AND last_seen is recent (within window).
+    if (ts - last_ts) > window_sec:
+        return False
+    db.execute(
+        "INSERT OR REPLACE INTO permaban (ip, added_ts, source, note) "
+        "VALUES (?, ?, ?, ?)",
+        (ip, ts, "auto-promote",
+         f"{occ} selfcare hits, first={first_ts} last={last_ts}"),
+    )
+    try:
+        subprocess.run(
+            ["/sbin/pfctl", "-t", PF_TABLE_PERMABAN, "-T", "add", ip],
+            check=False, capture_output=True, timeout=5,
+        )
+    except Exception as exc:
+        log(f"permaban pfctl add {ip} failed: {exc}")
+    log(f"permaban auto-promote {ip} ({occ} hits)")
+    return True
+
+
 def selfcare_add(db, ip: str, ts: int, ttl_sec: int, categories: str, source: str, iface: str = "") -> bool:
     """Insert IP into selfcare_entries + pf table. Return True if newly added,
-    False if already tracked (existing TTL preserved, no silent extension)."""
+    False if already tracked (existing TTL preserved, no silent extension).
+    Also bumps selfcare_history occurrence count on each newly-added entry."""
+    if is_permabanned(db, ip):
+        return False
     existing = db.execute(
         "SELECT expires_ts FROM selfcare_entries WHERE ip = ? AND removed_ts IS NULL",
         (ip,),
@@ -188,6 +256,7 @@ def selfcare_add(db, ip: str, ts: int, ttl_sec: int, categories: str, source: st
         )
     except Exception as exc:
         log(f"selfcare pfctl add {ip} failed: {exc}")
+    history_upsert(db, ip, ts)
     return True
 
 
@@ -235,6 +304,9 @@ def main() -> int:
     precheck_min_conf = int(cfg["reporter"]["precheck_min_confidence"])
     selfcare_on = cfg["selfcare"]["enabled"] == "1"
     selfcare_ttl = int(cfg["selfcare"]["ttl_hours"]) * 3600
+    permaban_on = cfg["permaban"]["enabled"] == "1"
+    permaban_threshold = max(2, int(cfg["permaban"]["promote_threshold"]))
+    permaban_window = max(1, int(cfg["permaban"]["promote_window_days"])) * 86400
 
     lines = read_new_lines()
     if not lines:
@@ -320,6 +392,8 @@ def main() -> int:
         if selfcare_on and precheck_passed:
             if selfcare_add(db, ip, ts, selfcare_ttl, default_categories, "precheck", ifaces_csv):
                 log(f"selfcare add {ip} via {ifaces_csv} (precheck conf>={precheck_min_conf})")
+                if permaban_on:
+                    maybe_promote(db, ip, ts, permaban_threshold, permaban_window)
 
         # Submit path — skip when daily quota is exhausted.
         if quota_full:
@@ -356,7 +430,9 @@ def main() -> int:
             # Selfcare add via reporter path — only when pre-check is OFF
             # (otherwise the precheck path above already added it).
             if selfcare_on and not precheck:
-                selfcare_add(db, ip, ts, selfcare_ttl, default_categories, "reporter", ifaces_csv)
+                if selfcare_add(db, ip, ts, selfcare_ttl, default_categories, "reporter", ifaces_csv):
+                    if permaban_on:
+                        maybe_promote(db, ip, ts, permaban_threshold, permaban_window)
         else:
             log(f"report {ip} failed: {msg}")
             if "rate limited" in msg or (quota is not None and quota == 0):

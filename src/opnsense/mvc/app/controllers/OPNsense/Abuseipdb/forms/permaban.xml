@@ -1,0 +1,20 @@
+<form>
+    <field>
+        <id>abuseipdb.permaban.enabled</id>
+        <label>Perma-Block enabled</label>
+        <type>checkbox</type>
+        <help>Permanently block IPs that repeatedly returned to the Self-Defense list after their TTL expired. Promoted entries land in pf table "abuseipdb_permaban" and stay there until manually removed. No AbuseIPDB report is submitted on promotion — that decision stays with the operator.</help>
+    </field>
+    <field>
+        <id>abuseipdb.permaban.promote_threshold</id>
+        <label>Promote after N occurrences</label>
+        <type>text</type>
+        <help>Number of times an IP must reappear in the Self-Defense list (within the window below) before it is promoted to Perma-Block. Default: 3.</help>
+    </field>
+    <field>
+        <id>abuseipdb.permaban.promote_window_days</id>
+        <label>Window (days)</label>
+        <type>text</type>
+        <help>Time window across which the threshold counts. Default: 14 days.</help>
+    </field>
+</form>

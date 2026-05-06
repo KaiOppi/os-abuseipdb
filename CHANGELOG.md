@@ -3,6 +3,27 @@
 All notable changes to this project are documented here.
 The format roughly follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project uses [Semantic Versioning](https://semver.org/).
 
+## [0.4.0] — 2026-05-06
+
+### Added
+- **Perma-Block list — for IPs that just won't quit.** When the same attacker keeps reappearing in your Self-Defense list after each TTL expiry, you can now promote them to a permanent block. Two ways to land on the list:
+  - **Auto-promote (default):** if an IP shows up in Self-Defense **3 times within 14 days** (configurable), it is moved to the Perma-Block table on the spot. The reporter checks inline as new selfcare entries are added, and a daily cron sweeps the history table for anything missed.
+  - **Manual:** add an IP from the new "Perma-Block" tab, or click the new **→ Permaban** button on any row in the "Self-Defense" tab.
+- **No AbuseIPDB report on promotion.** The decision to publicly flag an IP stays with the operator — Perma-Block is a local pf table only, populated independently of the reporter's submission flow.
+- **Manual remove only.** Once an IP lands in Perma-Block, it stays there until you remove it from the GUI. The Self-Defense TTL doesn't apply.
+- New pf table `abuseipdb_permaban`, alias of the same name, dedicated block rule installed at the top of the WAN ruleset (or floating, when multiple interfaces are selected).
+- New Perma-Block configuration in `Firewall → AbuseIPDB → Perma-Block`: enabled, promote threshold (default 3), promote window in days (default 14).
+- New stats counter `permaban_count` — visible in the info banner at the top of the plugin page.
+- New REST endpoints:
+  - `GET  /api/abuseipdb/service/permaban_list`
+  - `POST /api/abuseipdb/service/permaban_add`     (body: `ip`, optional `note`)
+  - `POST /api/abuseipdb/service/permaban_remove`  (body: `ip`)
+  - `POST /api/abuseipdb/service/permaban_promote` (manual auto-promote scan)
+- New configd actions: `abuseipdb permaban_list`, `abuseipdb permaban_add`, `abuseipdb permaban_remove`, `abuseipdb permaban_scan`.
+
+### Migrations
+- SQLite: two new tables, both additive — `selfcare_history (ip PK, first_seen_ts, last_seen_ts, occurrences)` keeps a counter of how often an IP cycled through Self-Defense; `permaban (ip PK, added_ts, source, note)` is the canonical Perma-Block ledger that re-syncs with pf on cron.
+
 ## [0.3.2] — 2026-04-30
 
 ### Fixed

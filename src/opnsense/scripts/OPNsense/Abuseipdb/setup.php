@@ -41,6 +41,7 @@ $plugin_enabled = (string)$pluginCfg->general->enabled === "1";
 $blacklist_on = (string)$pluginCfg->blacklist->enabled === "1";
 $reporter_on = (string)$pluginCfg->reporter->enabled === "1";
 $selfcare_on = (string)$pluginCfg->selfcare->enabled === "1";
+$permaban_on = (string)$pluginCfg->permaban->enabled === "1";
 
 // Interface list for the block rule. Accept either internal identifiers
 // (wan, opt1, ...) or the friendly names from the GUI (WAN, DSL, ...). Map
@@ -82,6 +83,8 @@ $alias_name = "abuseipdb_blacklist";
 $rule_marker = "[os-abuseipdb] block AbuseIPDB known attackers";
 $selfcare_alias_name = "abuseipdb_selfcare";
 $selfcare_rule_marker = "[os-abuseipdb] block self-defense list";
+$permaban_alias_name = "abuseipdb_permaban";
+$permaban_rule_marker = "[os-abuseipdb] block perma-block list";
 
 $dirty_model = false;
 
@@ -147,6 +150,36 @@ if ($plugin_enabled && $selfcare_on && $existing_sc_alias === null) {
     echo "alias $selfcare_alias_name exists\n";
 } else {
     echo "selfcare alias skipped (plugin/self-defense disabled)\n";
+}
+
+// --- Perma-block alias (separate pf table, populated by promotions) ---
+$existing_pb_alias = null;
+foreach ($alias_mdl->aliases->alias->iterateItems() as $uuid => $a) {
+    if ((string)$a->name === $permaban_alias_name) {
+        $existing_pb_alias = $a;
+        break;
+    }
+}
+if ($plugin_enabled && $permaban_on && $existing_pb_alias === null) {
+    $a = $alias_mdl->aliases->alias->Add();
+    $a->enabled = "1";
+    $a->name = $permaban_alias_name;
+    $a->type = "external";
+    $a->proto = "IPv4";
+    $a->counters = "1";
+    $a->description = "Perma-block list (populated by os-abuseipdb)";
+    $errs = $alias_mdl->performValidation();
+    if (count($errs) > 0) {
+        foreach ($errs as $e) echo "permaban alias validation: " . $e->getMessage() . "\n";
+        exit(1);
+    }
+    $alias_mdl->serializeToConfig();
+    $dirty_model = true;
+    echo "alias $permaban_alias_name created\n";
+} else if ($existing_pb_alias !== null) {
+    echo "alias $permaban_alias_name exists\n";
+} else {
+    echo "permaban alias skipped (plugin/permaban disabled)\n";
 }
 
 // --- Block rule (classic <filter><rule>) ---
@@ -308,6 +341,73 @@ if ($plugin_enabled && $selfcare_on) {
     }
 }
 
+// --- Perma-block rule (same structure, own alias, no TTL ever) ---
+$pb_rule_idx = null;
+foreach ($config["filter"]["rule"] as $i => $r) {
+    if (is_array($r) && (($r["descr"] ?? "") === $permaban_rule_marker)) {
+        $pb_rule_idx = $i;
+        break;
+    }
+}
+
+if ($pb_rule_idx !== null && $plugin_enabled && $permaban_on) {
+    $cur_if = $config["filter"]["rule"][$pb_rule_idx]["interface"] ?? "";
+    $cur_floating = !empty($config["filter"]["rule"][$pb_rule_idx]["floating"]);
+    $need_floating = $is_floating;
+    if ($cur_if !== $block_ifs_csv || $cur_floating !== $need_floating) {
+        array_splice($config["filter"]["rule"], $pb_rule_idx, 1);
+        $pb_rule_idx = null;
+        $dirty_classic = true;
+        echo "permaban rule: deleted (interface selection changed) — will recreate\n";
+    }
+}
+
+if ($plugin_enabled && $permaban_on) {
+    $pb_rule = [
+        "type"           => "block",
+        "interface"      => $block_ifs_csv,
+        "ipprotocol"     => "inet",
+        "statetype"      => "keep state",
+        "direction"      => "in",
+        "quick"          => "1",
+        "log"            => "1",
+        "disablereplyto" => "1",
+        "descr"          => $permaban_rule_marker,
+        "source"         => ["network" => $permaban_alias_name],
+        "destination"    => ["any" => "1"],
+        "created"        => ["username" => "os-abuseipdb", "time" => time()],
+        "updated"        => ["username" => "os-abuseipdb", "time" => time()],
+    ];
+    if ($is_floating) {
+        $pb_rule["floating"] = "yes";
+    }
+    if ($pb_rule_idx === null) {
+        array_unshift($config["filter"]["rule"], $pb_rule);
+        $dirty_classic = true;
+        echo "permaban block rule inserted at top of user rules\n";
+    } else {
+        if (!empty($config["filter"]["rule"][$pb_rule_idx]["disabled"])) {
+            unset($config["filter"]["rule"][$pb_rule_idx]["disabled"]);
+            $dirty_classic = true;
+            echo "permaban block rule re-enabled\n";
+        }
+        if (empty($config["filter"]["rule"][$pb_rule_idx]["disablereplyto"])) {
+            $config["filter"]["rule"][$pb_rule_idx]["disablereplyto"] = "1";
+            $dirty_classic = true;
+        }
+        if (isset($config["filter"]["rule"][$pb_rule_idx]["protocol"])) {
+            unset($config["filter"]["rule"][$pb_rule_idx]["protocol"]);
+            $dirty_classic = true;
+        }
+    }
+} else if ($pb_rule_idx !== null) {
+    if (empty($config["filter"]["rule"][$pb_rule_idx]["disabled"])) {
+        $config["filter"]["rule"][$pb_rule_idx]["disabled"] = "1";
+        $dirty_classic = true;
+        echo "permaban block rule disabled\n";
+    }
+}
+
 // --- Cron jobs ---
 $cron_mdl = new Cron();
 $dirty_cron = false;
@@ -374,6 +474,18 @@ $dirty_cron |= ensure_cron(
     "abuseipdb selfcare_cleanup",
     "7", "*",
     $plugin_enabled && $selfcare_on
+);
+
+// Perma-Block auto-promote scan once per day at 03:23 (just after blacklist
+// download, off-peak). Reporter already promotes inline as IPs reappear; this
+// is a belt-and-suspenders sweep that catches anything missed (e.g. config
+// changes, manual edits to selfcare_history).
+$dirty_cron |= ensure_cron(
+    $cron_mdl,
+    "os-abuseipdb: perma-block auto-promote scan",
+    "abuseipdb permaban_scan",
+    "23", "3",
+    $plugin_enabled && $permaban_on
 );
 
 if ($dirty_cron) {

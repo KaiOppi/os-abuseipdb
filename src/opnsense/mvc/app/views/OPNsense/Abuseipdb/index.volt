@@ -11,10 +11,11 @@
     .abuseipdb-info td.lbl { color: #555; width: 180px; white-space: nowrap; }
     .abuseipdb-info .ok { color: #2e7d32; font-weight: 600; }
     .abuseipdb-info .warn { color: #c62828; font-weight: 600; }
-    #reportsTable, #selfcareTable { width: 100%; font-size: 12px; }
+    #reportsTable, #selfcareTable, #permabanTable { width: 100%; font-size: 12px; }
     #reportsTable td, #reportsTable th,
-    #selfcareTable td, #selfcareTable th { padding: 4px 8px; border-bottom: 1px solid #eee; }
-    #reportsTable th, #selfcareTable th { background: #f4f4f4; text-align: left; }
+    #selfcareTable td, #selfcareTable th,
+    #permabanTable td, #permabanTable th { padding: 4px 8px; border-bottom: 1px solid #eee; }
+    #reportsTable th, #selfcareTable th, #permabanTable th { background: #f4f4f4; text-align: left; }
 </style>
 
 <script>
@@ -43,6 +44,7 @@
                 $("#stat_reports_total").text(d.reports_total);
                 $("#stat_selfcare_active").text((d.selfcare_active || 0).toLocaleString());
                 $("#stat_selfcare_total").text((d.selfcare_total || 0).toLocaleString());
+                $("#stat_permaban_count").text((d.permaban_count || 0).toLocaleString());
                 renderStatsTab(d);
             }
         );
@@ -130,7 +132,7 @@
                 $("#selfcareTotal").text(total);
                 var tbody = $("#selfcareTable tbody").empty();
                 if (rows.length === 0) {
-                    tbody.append('<tr><td colspan="5" style="text-align:center;color:#888;padding:12px">{{ lang._("No active entries.") }}</td></tr>');
+                    tbody.append('<tr><td colspan="6" style="text-align:center;color:#888;padding:12px">{{ lang._("No active entries.") }}</td></tr>');
                 } else {
                     rows.forEach(function(r) {
                         var $tr = $('<tr>');
@@ -139,6 +141,37 @@
                         $tr.append($('<td>').text(fmtTs(r.added_ts)));
                         $tr.append($('<td>').text(fmtTs(r.expires_ts) + ' (' + fmtDuration(r.remaining_sec) + ')'));
                         $tr.append($('<td>').text(r.categories || ''));
+                        var $btn = $('<button class="btn btn-xs btn-warning promoteBtn" title="Promote to Perma-Block"><span class="fa fa-bolt"></span> Permaban</button>');
+                        $btn.attr('data-ip', r.ip);
+                        $tr.append($('<td>').append($btn));
+                        tbody.append($tr);
+                    });
+                }
+            }
+        );
+    }
+
+    function refreshPermaban() {
+        ajaxCall(
+            url = "/api/abuseipdb/service/permaban_list",
+            sendData = {limit: 500},
+            callback = function(resp) {
+                if (!resp || resp.status !== 'ok') return;
+                var rows = resp.data.rows;
+                $("#permabanTotal").text(resp.data.total);
+                var tbody = $("#permabanTable tbody").empty();
+                if (rows.length === 0) {
+                    tbody.append('<tr><td colspan="5" style="text-align:center;color:#888;padding:12px">{{ lang._("No Perma-Block entries.") }}</td></tr>');
+                } else {
+                    rows.forEach(function(r) {
+                        var $tr = $('<tr>');
+                        $tr.append($('<td>').append($('<tt>').text(r.ip)));
+                        $tr.append($('<td>').text(fmtTs(r.added_ts)));
+                        $tr.append($('<td>').text(r.source || ''));
+                        $tr.append($('<td>').text(r.note || ''));
+                        var $rm = $('<button class="btn btn-xs btn-default removePermabanBtn" title="Remove from Perma-Block"><span class="fa fa-trash"></span> Remove</button>');
+                        $rm.attr('data-ip', r.ip);
+                        $tr.append($('<td>').append($rm));
                         tbody.append($tr);
                     });
                 }
@@ -182,7 +215,8 @@
         var data_get_map = {'frm_general': "/api/abuseipdb/settings/get",
                             'frm_blacklist': "/api/abuseipdb/settings/get",
                             'frm_reporter': "/api/abuseipdb/settings/get",
-                            'frm_selfcare': "/api/abuseipdb/settings/get"};
+                            'frm_selfcare': "/api/abuseipdb/settings/get",
+                            'frm_permaban': "/api/abuseipdb/settings/get"};
 
         mapDataToFormUI(data_get_map).done(function(){
             updateServiceControlUI('abuseipdb');
@@ -250,10 +284,83 @@
             var href = $(e.target).attr('href');
             if (href === '#logtab') refreshReports();
             if (href === '#selfcare') refreshSelfcare();
+            if (href === '#permaban') refreshPermaban();
             if (href === '#statstab') refreshStats();
         });
         $("#refreshReportsAct").click(refreshReports);
         $("#refreshSelfcareAct").click(refreshSelfcare);
+        $("#refreshPermabanAct").click(refreshPermaban);
+
+        // "→ Permaban" button on each row of the self-defense list.
+        $("#selfcareTable").on("click", ".promoteBtn", function() {
+            var ip = $(this).attr("data-ip");
+            if (!ip) return;
+            if (!confirm("{{ lang._('Permanently block ') }}" + ip + "?\n\n" +
+                         "{{ lang._('Perma-Block stays in place until you remove it manually.') }}")) {
+                return;
+            }
+            ajaxCall(
+                url = "/api/abuseipdb/service/permaban_add",
+                sendData = {ip: ip, note: "manual from selfcare list"},
+                callback = function(resp) {
+                    refreshSelfcare();
+                    refreshPermaban();
+                    refreshStats();
+                }
+            );
+        });
+
+        // Add button on Permaban tab.
+        $("#permabanAddAct").click(function() {
+            var ip = ($("#permaban_new_ip").val() || "").trim();
+            var note = ($("#permaban_new_note").val() || "").trim();
+            if (!ip) { alert("{{ lang._('Enter an IP address.') }}"); return; }
+            ajaxCall(
+                url = "/api/abuseipdb/service/permaban_add",
+                sendData = {ip: ip, note: note},
+                callback = function(resp) {
+                    if (resp && resp.status === 'ok') {
+                        $("#permaban_new_ip").val("");
+                        $("#permaban_new_note").val("");
+                        refreshPermaban();
+                        refreshStats();
+                    } else {
+                        alert((resp && resp.message) || "{{ lang._('Add failed') }}");
+                    }
+                }
+            );
+        });
+
+        // Remove button on each row of the Perma-Block list.
+        $("#permabanTable").on("click", ".removePermabanBtn", function() {
+            var ip = $(this).attr("data-ip");
+            if (!ip) return;
+            if (!confirm("{{ lang._('Remove ') }}" + ip + " {{ lang._('from Perma-Block?') }}")) return;
+            ajaxCall(
+                url = "/api/abuseipdb/service/permaban_remove",
+                sendData = {ip: ip},
+                callback = function(resp) {
+                    refreshPermaban();
+                    refreshStats();
+                }
+            );
+        });
+
+        // Manual scan trigger on Permaban tab.
+        $("#permabanScanAct").click(function() {
+            ajaxCall(
+                url = "/api/abuseipdb/service/permaban_promote",
+                sendData = {},
+                callback = function(resp) {
+                    var n = (resp && resp.promoted) || 0;
+                    $("#responseMsg").removeClass("hidden").html(
+                        "{{ lang._('Auto-promote scan:') }} " + n + " " + "{{ lang._('IP(s) promoted.') }}"
+                    );
+                    refreshPermaban();
+                    refreshStats();
+                }
+            );
+        });
 
         refreshStats();
         setInterval(refreshStats, 30000);
@@ -287,6 +394,10 @@
             <td class="lbl">{{ lang._('Self-defense (active / total)') }}</td>
             <td><span id="stat_selfcare_active">—</span> / <span id="stat_selfcare_total">—</span></td>
         </tr>
+        <tr>
+            <td class="lbl">{{ lang._('Perma-Block entries') }}</td>
+            <td><span id="stat_permaban_count">—</span></td>
+        </tr>
     </table>
     <div style="margin-top:8px">
         <b>{{ lang._('Jump to:') }}</b>
@@ -310,6 +421,7 @@
     <li><a data-toggle="tab" href="#blacklist">{{ lang._('Blacklist') }}</a></li>
     <li><a data-toggle="tab" href="#reporter">{{ lang._('Reporter') }}</a></li>
     <li><a data-toggle="tab" href="#selfcare">{{ lang._('Self-Defense') }}</a></li>
+    <li><a data-toggle="tab" href="#permaban">{{ lang._('Perma-Block') }}</a></li>
     <li><a data-toggle="tab" href="#logtab">{{ lang._('Log') }}</a></li>
     <li><a data-toggle="tab" href="#statstab">{{ lang._('Statistics') }}</a></li>
 </ul>
@@ -348,6 +460,55 @@
                         <th>{{ lang._('Added') }}</th>
                         <th>{{ lang._('Expires') }}</th>
                         <th>{{ lang._('Categories') }}</th>
+                        <th>{{ lang._('Action') }}</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
+    <div id="permaban" class="tab-pane fade">
+        {{ partial("layout_partials/base_form", ['fields': permabanForm, 'id': 'frm_permaban']) }}
+        <div style="padding:10px 15px 15px 15px">
+            <h4 style="margin-top:18px">
+                {{ lang._('Add to Perma-Block') }}
+            </h4>
+            <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
+                <div>
+                    <label style="display:block;font-size:11px;color:#555">{{ lang._('IP address') }}</label>
+                    <input type="text" id="permaban_new_ip" placeholder="1.2.3.4" class="form-control" style="width:160px"/>
+                </div>
+                <div>
+                    <label style="display:block;font-size:11px;color:#555">{{ lang._('Note (optional)') }}</label>
+                    <input type="text" id="permaban_new_note" placeholder="{{ lang._('e.g. seen brute-forcing SSH') }}" class="form-control" style="width:280px"/>
+                </div>
+                <div>
+                    <button class="btn btn-primary btn-sm" id="permabanAddAct">
+                        <span class="fa fa-plus"></span> {{ lang._('Add') }}
+                    </button>
+                </div>
+            </div>
+            <p style="color:#777;font-size:11px;margin-top:6px">
+                {{ lang._('Perma-Block entries are stored in the local pf table only — no AbuseIPDB report is submitted on add. The decision to publicly flag an IP stays with you.') }}
+            </p>
+            <h4 style="margin-top:24px">
+                {{ lang._('Currently blocked permanently') }}
+                (<span id="permabanTotal">0</span>)
+                <button class="btn btn-default btn-xs" id="refreshPermabanAct" style="margin-left:10px">
+                    <span class="fa fa-refresh"></span> {{ lang._('Refresh') }}
+                </button>
+                <button class="btn btn-default btn-xs" id="permabanScanAct" style="margin-left:6px">
+                    <span class="fa fa-bolt"></span> {{ lang._('Run auto-promote scan') }}
+                </button>
+            </h4>
+            <table id="permabanTable">
+                <thead>
+                    <tr>
+                        <th>{{ lang._('IP') }}</th>
+                        <th>{{ lang._('Added') }}</th>
+                        <th>{{ lang._('Source') }}</th>
+                        <th>{{ lang._('Note') }}</th>
+                        <th>{{ lang._('Action') }}</th>
                     </tr>
                 </thead>
                 <tbody></tbody>

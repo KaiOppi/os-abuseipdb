@@ -19,6 +19,7 @@ BLOCKLIST_FILE = os.path.join(STATE_DIR, "blocklist.txt")
 LOG_FILE = os.path.join(STATE_DIR, "abuseipdb.log")
 PF_TABLE = "abuseipdb_blacklist"
 PF_TABLE_SELFCARE = "abuseipdb_selfcare"
+PF_TABLE_PERMABAN = "abuseipdb_permaban"
 
 API_BASE = "https://api.abuseipdb.com/api/v2"
 
@@ -44,6 +45,11 @@ DEFAULT_CONFIG = {
     "selfcare": {
         "enabled": "0",
         "ttl_hours": "72",
+    },
+    "permaban": {
+        "enabled": "1",
+        "promote_threshold": "3",
+        "promote_window_days": "14",
     },
 }
 
@@ -93,6 +99,22 @@ def get_db() -> sqlite3.Connection:
             source TEXT,
             categories TEXT,
             removed_ts INTEGER
+        )
+    """)
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS selfcare_history (
+            ip TEXT PRIMARY KEY,
+            first_seen_ts INTEGER NOT NULL,
+            last_seen_ts INTEGER NOT NULL,
+            occurrences INTEGER NOT NULL DEFAULT 1
+        )
+    """)
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS permaban (
+            ip TEXT PRIMARY KEY,
+            added_ts INTEGER NOT NULL,
+            source TEXT,
+            note TEXT
         )
     """)
     # Schema migrations — additive only, never destructive.

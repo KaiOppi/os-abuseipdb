@@ -105,4 +105,88 @@ class ServiceController extends ApiMutableServiceControllerBase
         }
         return $data;
     }
+
+    /**
+     * Return the Perma-Block list as JSON.
+     */
+    public function permabanListAction()
+    {
+        $limit = (int)($this->request->get('limit', 'int', 500));
+        if ($limit < 1) $limit = 500;
+        if ($limit > 5000) $limit = 5000;
+
+        $backend = new Backend();
+        $output = trim($backend->configdpRun('abuseipdb permaban_list', [(string)$limit]));
+        $data = json_decode($output, true);
+        if (!is_array($data)) {
+            return ['status' => 'failed', 'raw' => $output];
+        }
+        return $data;
+    }
+
+    /**
+     * Add an IP to the Perma-Block list. POST with body {ip,note}.
+     * No AbuseIPDB report is submitted — that decision is left to the operator.
+     */
+    public function permabanAddAction()
+    {
+        if (!$this->request->isPost()) {
+            return ['status' => 'failed', 'message' => 'POST required'];
+        }
+        $ip = trim((string)$this->request->getPost('ip', 'striptags', ''));
+        $note = trim((string)$this->request->getPost('note', 'striptags', ''));
+        if ($ip === '' || !filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+            return ['status' => 'failed', 'message' => 'invalid ipv4 address'];
+        }
+        // Sanitise note: keep length bounded, strip control chars / commas
+        // (they break configd's space-separated argv).
+        $note = preg_replace('/[^A-Za-z0-9 _\-\.\:]/', '', $note);
+        $note = substr($note ?: '', 0, 200);
+        $args = [$ip, 'manual', $note !== '' ? $note : '-'];
+        $backend = new Backend();
+        $output = trim($backend->configdpRun('abuseipdb permaban_add', $args));
+        $data = json_decode($output, true);
+        if (!is_array($data)) {
+            return ['status' => 'failed', 'raw' => $output];
+        }
+        return $data;
+    }
+
+    /**
+     * Remove an IP from the Perma-Block list. POST with body {ip}.
+     */
+    public function permabanRemoveAction()
+    {
+        if (!$this->request->isPost()) {
+            return ['status' => 'failed', 'message' => 'POST required'];
+        }
+        $ip = trim((string)$this->request->getPost('ip', 'striptags', ''));
+        if ($ip === '' || !filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+            return ['status' => 'failed', 'message' => 'invalid ipv4 address'];
+        }
+        $backend = new Backend();
+        $output = trim($backend->configdpRun('abuseipdb permaban_remove', [$ip]));
+        $data = json_decode($output, true);
+        if (!is_array($data)) {
+            return ['status' => 'failed', 'raw' => $output];
+        }
+        return $data;
+    }
+
+    /**
+     * Trigger an ad-hoc auto-promote scan.
+     */
+    public function permabanPromoteAction()
+    {
+        if (!$this->request->isPost()) {
+            return ['status' => 'failed', 'message' => 'POST required'];
+        }
+        $backend = new Backend();
+        $output = trim($backend->configdRun('abuseipdb permaban_scan'));
+        $data = json_decode($output, true);
+        if (!is_array($data)) {
+            return ['status' => 'failed', 'raw' => $output];
+        }
+        return $data;
+    }
 }

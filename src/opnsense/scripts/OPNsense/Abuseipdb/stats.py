@@ -37,6 +37,7 @@ def main() -> int:
         "reports_total": 0,
         "selfcare_active": 0,
         "selfcare_total": 0,
+        "permaban_count": 0,
         "iface_descr": {},          # identifier → friendly name (for UI)
         "by_iface": {               # all keyed by identifier (wan, opt1, ...)
             "selfcare_active": {},
@@ -77,6 +78,9 @@ def main() -> int:
         data["selfcare_active"] = row[0] if row else 0
         row = db.execute("SELECT COUNT(*) FROM selfcare_entries").fetchone()
         data["selfcare_total"] = row[0] if row else 0
+
+        row = db.execute("SELECT COUNT(*) FROM permaban").fetchone()
+        data["permaban_count"] = row[0] if row else 0
 
         # Per-interface aggregations. iface column may hold a comma-separated
         # list (one IP can hit multiple interfaces in load-balance setups), so
