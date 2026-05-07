@@ -2,13 +2,15 @@
 
 OPNsense plugin for bidirectional [AbuseIPDB](https://www.abuseipdb.com) integration:
 
-- **Blacklist** — downloads the AbuseIPDB blocklist into a pf table and auto-creates a firewall alias + WAN block rule.
+- **Blacklist** — downloads the AbuseIPDB blocklist into a pf table and auto-creates a firewall alias + block rule.
 - **Reporter** — parses the OPNsense firewall log and submits attacker IPs back to AbuseIPDB (bidirectional participation in the threat-intelligence network).
 - **Self-Defense** — TTL-based local blocklist populated from reporter submits; closes the gap while AbuseIPDB's community catches up.
-- **Per-interface tracking** — every report and self-defense entry knows which uplink it came in over; useful for multi-WAN setups (failover or load-balance) to see *where* the attack pressure lands.
+- **Perma-Block** — repeat offenders that come back after their Self-Defense TTL expired get auto-promoted to a permanent block list, with a per-IP hit counter (cumulative across reboots) so you see exactly how often each entry actually triggered.
+- **Configurable rule style** — choose where the plugin places its block rules: classic `Firewall: Rules: WAN` (legacy), the modern `Firewall: Automation: Filter` tab, or *None* if you'd rather craft rules yourself against the maintained aliases. Style switches auto-clean up rules in the previously-used location.
+- **Per-interface tracking** — every report, self-defense entry and perma-block hit knows which uplink it came in over; useful for multi-WAN setups (failover or load-balance) to see *where* the attack pressure lands.
 - **Statistics tab** — per-interface counters and a 14-day trend for reports and self-defense additions; helps spot which uplink is the noisier target and how the load develops over time.
-- **Dashboard widget** — live stats (blocklist size, last download, quota, reports, self-defense active/total).
-- **Fire & forget** — cron jobs are created automatically when you enable the feature (daily download, 5-minute reporter cycles, hourly self-defense cleanup).
+- **Dashboard widget** — live stats (blocklist size, last download, quota, reports, self-defense active/total, perma-block size).
+- **Fire & forget** — cron jobs are created automatically when you enable the feature (daily download, 5-minute reporter cycles, hourly self-defense cleanup, daily perma-block sweep, 5-minute hit-counter sampler).
 
 > **Status:** public beta (v0.5.0). Running in production on three OPNsense boxes. Looking for community testers — please open an issue or a r/opnsense reply with feedback.
 
@@ -49,6 +51,20 @@ or `service configd restart` is needed anymore.)
    - Tick `Plugin enabled`
    - Paste your `API Key` (80-char hex, free tier at [abuseipdb.com](https://www.abuseipdb.com/account/api))
 2. **Save** — the **Test connection** button verifies the key immediately.
+
+The same tab carries a **Block rules** section that controls where and whether the plugin manages its three block rules (Blacklist, Self-Defense, Perma-Block). See [Block rules](#block-rules) below.
+
+### Block rules
+
+The plugin maintains three pf-table aliases — `abuseipdb_blacklist`, `abuseipdb_selfcare`, `abuseipdb_permaban` — and (optionally) one block rule per alias. *Where* and *whether* those block rules live is up to you:
+
+- **Rule style** (dropdown):
+  - **Classic** *(default)* — rules go into the legacy `<filter><rule>` list, visible under `Firewall: Rules: WAN`. Existing installs upgrade transparently.
+  - **Automation** — rules go into the modern `OPNsense\Firewall\Filter` model, visible under `Firewall: Automation: Filter` (the new "Rules" tab). Sequence is set to `1` so plugin rules fire ahead of hand-curated ones.
+  - **None** — plugin keeps the aliases up to date but does not create any rules. Useful when you want full manual control over rule order in the new Rules tab.
+- **Manage block rules on save** (checkbox) — when off, the plugin removes any previously-placed rules and never touches firewall rules again. Aliases are still maintained.
+
+Switching styles is safe: the plugin remembers the previously-applied style and removes its rules from the old location before creating fresh ones in the new location. No orphans, no duplicates.
 
 ### Blacklist
 
@@ -99,6 +115,26 @@ Trigger conditions for adding an IP to the self-defense table:
 
 The current self-defense list is visible directly in the **Self-Defense** tab under the settings ("Currently blocked"). Each entry shows the interface it came in over (e.g. `WAN`, `DSL`, `LWL`).
 
+### Perma-Block
+
+Tab **Perma-Block** → enable.
+
+Repeat offenders — IPs that come *back* into the Self-Defense list after their TTL expired — get auto-promoted to a permanent block list (pf table `abuseipdb_permaban`). They stay blocked until you manually remove them, regardless of TTL. No AbuseIPDB report is submitted on promotion: the decision to publicly flag an IP stays with you.
+
+Default values:
+- `Promote after N occurrences` — 3 (must reappear three times within the window)
+- `Window (days)` — 14 (the threshold is counted across the last 14 days)
+
+Promotion happens at two points:
+- **Inline:** the reporter sees an IP it already knows from `selfcare_history` and promotes immediately.
+- **Sweep:** a daily cron (`abuseipdb permaban_scan`, 03:23) catches anything missed (manual edits, reporter downtime, config changes).
+
+The Perma-Block tab shows the live list with two telemetry columns:
+- **Hits** — cumulative pf-counter total per IP, persistent across reboots. A 5-minute cron (`abuseipdb permaban_count`) reads the in-kernel counter (`pfctl -t abuseipdb_permaban -T show -vv`), folds the delta into the persisted total, and survives reboots / `pfctl -T zero` by detecting counter resets.
+- **Last hit** — timestamp of the last counter advance.
+
+You can also add IPs manually (e.g. for a problem source you've identified outside the reporter path) — the **Add to Perma-Block** form takes an IP plus an optional note.
+
 ### Statistics
 
 Tab **Statistics** — aggregated views over the data that the reporter and self-defense path collect:
@@ -144,6 +180,18 @@ configctl abuseipdb selfcare_list 100
 
 # Run expiry cleanup manually
 configctl abuseipdb selfcare_cleanup
+
+# Perma-Block list in pf table
+pfctl -t abuseipdb_permaban -T show | wc -l
+
+# Perma-Block entries with hit counters
+configctl abuseipdb permaban_list 500
+
+# Trigger a Perma-Block auto-promote scan manually
+configctl abuseipdb permaban_scan
+
+# Run the hit-counter sampler once (normally every 5 min via cron)
+configctl abuseipdb permaban_count
 ```
 
 ## Uninstall
@@ -168,13 +216,16 @@ pkg remove os-abuseipdb
 - [x] Blacklist downloader
 - [x] Auto-setup of alias + block rule (multi-interface, floating)
 - [x] Reporter (firewall log → AbuseIPDB) with dry-run, pre-check, noise filter
-- [x] Cron integration (download + reporter)
+- [x] Cron integration (download + reporter + cleanups)
 - [x] Dashboard widget
 - [x] Report log viewer in the plugin + refresh button
 - [x] Quick-jump navigation to alias / rule / cron / log
 - [x] FreeBSD pkg + GitHub release
 - [x] Self-Defense local blocklist (TTL-based, auto-populated from reporter submits)
 - [x] Per-interface tracking + Statistics tab (per-interface counters, 14-day trend)
+- [x] Perma-Block — auto-promote repeat offenders that come back after their Self-Defense TTL
+- [x] Per-IP hit counter on the Perma-Block list, reboot-safe (cumulative pf-counter total + last-hit timestamp)
+- [x] Configurable rule style — classic `<filter><rule>` / Automation Filter model / none, with auto-cleanup on style switch and a "manage block rules on save" toggle for full manual control
 
 **Open:**
 - [ ] Rule-to-category mapping UI (currently default categories only)
