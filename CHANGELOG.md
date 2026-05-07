@@ -3,6 +3,15 @@
 All notable changes to this project are documented here.
 The format roughly follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project uses [Semantic Versioning](https://semver.org/).
 
+## [0.4.2] — 2026-05-07
+
+### Fixed
+- **`setup.php` crashed on fresh OPNsense VPS installs.** Reported by a community tester on 26.1.7_3 amd64 — second external bug report. Root cause: a freshly-imaged OPNsense ships with an empty `<filter></filter>` element in `config.xml`. PHP's XML-to-array deserialiser turns that into the empty string `""`, **not** an empty array. The previous defensive check (`if (!isset($config["filter"]))`) only handled the missing-key case — when the key was present but a string, the next line's `$config["filter"]["rule"]` triggered PHP 8's `Cannot access offset of type string on string` TypeError, the script aborted, and the firewall block rule was never created.
+
+  Fix: extended the defensive normalisation to `!isset(...) || !is_array(...)` for both `$config["filter"]` and `$config["filter"]["rule"]`. Also added a related guard for the single-existing-rule case where OPNsense's deserialiser collapses the rule list into one associative element — that variant is now wrapped in a list before the foreach.
+
+  Workaround for users on 0.4.1 or earlier without the fix: add at least one dummy classic firewall rule via the GUI, then save AbuseIPDB settings. The presence of a real rule forces the parent `<filter>` element to be a non-empty array and side-steps the bug.
+
 ## [0.4.1] — 2026-05-06
 
 ### Added

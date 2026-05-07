@@ -184,9 +184,27 @@ if ($plugin_enabled && $permaban_on && $existing_pb_alias === null) {
 
 // --- Block rule (classic <filter><rule>) ---
 global $config;
-if (!isset($config["filter"])) $config["filter"] = [];
+// Defensive: fresh OPNsense installs (and minimal-config VPS images) ship
+// with `<filter></filter>` as an empty element. PHP's XML-to-array
+// deserialiser turns that into the string `""`, not an empty array. A bare
+// `isset` check passes for both cases, so we'd then fall through to
+// `$config["filter"]["rule"]` and PHP 8 throws "Cannot access offset of
+// type string on string". Force-normalise to array on every entry.
+if (!isset($config["filter"]) || !is_array($config["filter"])) $config["filter"] = [];
 if (!isset($config["filter"]["rule"]) || !is_array($config["filter"]["rule"])) {
     $config["filter"]["rule"] = [];
+}
+// One more deserialiser quirk: if there is exactly ONE existing classic rule
+// in config.xml, OPNsense's array-of-rules collapses into a single
+// associative rule (keys are field names like "type", "descr", ...). Detect
+// this by checking whether any key is non-numeric, then wrap into a list so
+// the foreach below sees one entry instead of iterating field-by-field.
+if (!empty($config["filter"]["rule"])) {
+    $keys = array_keys($config["filter"]["rule"]);
+    $first = $keys[0];
+    if (!is_int($first)) {
+        $config["filter"]["rule"] = [$config["filter"]["rule"]];
+    }
 }
 
 $rule_idx = null;
