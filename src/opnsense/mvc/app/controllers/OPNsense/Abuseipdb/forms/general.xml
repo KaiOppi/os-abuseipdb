@@ -20,20 +20,6 @@
         <label>Rule style</label>
         <type>dropdown</type>
         <style>selectpicker</style>
-        <options>
-            <option>
-                <value>classic</value>
-                <label>Classic — Firewall: Rules: WAN (legacy &lt;filter&gt;)</label>
-            </option>
-            <option>
-                <value>automation</value>
-                <label>Automation — Firewall: Automation: Filter (new Rules tab)</label>
-            </option>
-            <option>
-                <value>none</value>
-                <label>None — manage block rules myself</label>
-            </option>
-        </options>
         <help>Where the plugin places its three block rules (blacklist, self-defense, perma-block). On a style switch, the plugin automatically removes the previously placed rules in the old location before creating fresh ones in the new location. With "None" the plugin only maintains the three pf-table aliases (abuseipdb_blacklist, abuseipdb_selfcare, abuseipdb_permaban) and leaves rule creation to you.</help>
     </field>
     <field>

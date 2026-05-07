@@ -15,11 +15,14 @@
             </api_key>
         </general>
         <rules>
-            <style type="TextField">
-                <Mask>/^(classic|automation|none)$/u</Mask>
-                <ValidationMessage>Choose where block rules are placed: classic, automation, or none.</ValidationMessage>
-                <default>classic</default>
+            <style type="OptionField">
                 <Required>Y</Required>
+                <Default>classic</Default>
+                <OptionValues>
+                    <classic>Classic — Firewall: Rules: WAN (legacy &lt;filter&gt;)</classic>
+                    <automation>Automation — Firewall: Automation: Filter (new Rules tab)</automation>
+                    <none>None — manage block rules myself</none>
+                </OptionValues>
             </style>
             <manage type="BooleanField">
                 <default>1</default>
