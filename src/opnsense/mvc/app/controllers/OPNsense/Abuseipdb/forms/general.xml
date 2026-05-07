@@ -11,4 +11,35 @@
         <type>text</type>
         <help>Your AbuseIPDB API key (80 characters hex). Get one at https://www.abuseipdb.com/account/api</help>
     </field>
+    <field>
+        <type>header</type>
+        <label>Block rules</label>
+    </field>
+    <field>
+        <id>abuseipdb.rules.style</id>
+        <label>Rule style</label>
+        <type>dropdown</type>
+        <style>selectpicker</style>
+        <options>
+            <option>
+                <value>classic</value>
+                <label>Classic — Firewall: Rules: WAN (legacy &lt;filter&gt;)</label>
+            </option>
+            <option>
+                <value>automation</value>
+                <label>Automation — Firewall: Automation: Filter (new Rules tab)</label>
+            </option>
+            <option>
+                <value>none</value>
+                <label>None — manage block rules myself</label>
+            </option>
+        </options>
+        <help>Where the plugin places its three block rules (blacklist, self-defense, perma-block). On a style switch, the plugin automatically removes the previously placed rules in the old location before creating fresh ones in the new location. With "None" the plugin only maintains the three pf-table aliases (abuseipdb_blacklist, abuseipdb_selfcare, abuseipdb_permaban) and leaves rule creation to you.</help>
+    </field>
+    <field>
+        <id>abuseipdb.rules.manage</id>
+        <label>Manage block rules on save</label>
+        <type>checkbox</type>
+        <help>When enabled (default), the plugin creates and updates its block rules on every save (idempotent — existing rules are matched by description and updated, not duplicated). When disabled, the plugin removes any previously placed rules and never touches firewall rules again — useful if you want full manual control. Aliases are always maintained regardless of this toggle.</help>
+    </field>
 </form>

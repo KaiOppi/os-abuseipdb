@@ -1,9 +1,25 @@
 <?php
 /*
- * Ensure firewall alias + WAN block rule for os-abuseipdb exist.
- * Alias goes into the modern OPNsense\Firewall\Alias model,
- * the block rule goes into the classic <filter><rule> list so it shows up
- * in the traditional "Firewall → Rules → WAN" tab where admins edit rules.
+ * Ensure firewall aliases + (optional) block rules for os-abuseipdb exist.
+ *
+ * Aliases live in the modern OPNsense\Firewall\Alias model (always managed,
+ * regardless of rule-style settings).
+ *
+ * Block rules can be placed in three styles, controlled by rules.style:
+ *   - classic    → legacy <filter><rule> in config.xml
+ *                  ("Firewall → Rules → WAN" tab)
+ *   - automation → modern OPNsense\Firewall\Filter model
+ *                  ("Firewall → Automation → Filter" tab)
+ *   - none       → no plugin-managed rule; user crafts rule(s) themselves
+ *                  against the maintained aliases.
+ *
+ * On every save the plugin compares the previously-applied style against
+ * the currently-requested one. If they differ, the rules placed in the
+ * old style are removed before fresh ones are created in the new style.
+ * The same cleanup runs when rules.manage is turned off.
+ *
+ * Idempotency: rules are matched by description marker, so a save that
+ * doesn't change anything material results in zero writes.
  *
  * Copyright (c) 2026 Kai Schlestein
  * BSD 2-Clause.
@@ -15,12 +31,11 @@ require_once("util.inc");
 use OPNsense\Core\ACL;
 use OPNsense\Core\Config;
 use OPNsense\Firewall\Alias;
+use OPNsense\Firewall\Filter as FwFilter;
 use OPNsense\Cron\Cron;
 use OPNsense\Abuseipdb\Abuseipdb;
 
 // Make sure the ACL cache picks up our page-firewall-abuseipdb privilege.
-// Without this, fresh installs don't show the menu entry or the privilege
-// in Access → Users until some unrelated event triggers a rebuild.
 try {
     $acl = new ACL();
     $acl->invalidateCache();
@@ -29,10 +44,9 @@ try {
     // non-fatal
 }
 
-// Force a fresh read of config.xml before instantiating the model — this
-// setup script runs right after settings/set in the UI save chain, and
-// without the reload we would pick up stale in-memory state (the
-// pre-save model).
+// Force a fresh read of config.xml before instantiating models — the script
+// runs right after settings/set, so the in-memory config is still the
+// pre-save state without this reload.
 clearstatcache(true, "/conf/config.xml");
 Config::getInstance()->forceReload();
 
@@ -43,9 +57,24 @@ $reporter_on = (string)$pluginCfg->reporter->enabled === "1";
 $selfcare_on = (string)$pluginCfg->selfcare->enabled === "1";
 $permaban_on = (string)$pluginCfg->permaban->enabled === "1";
 
+// Rule-style settings (added in v0.5.0). Defaults preserve pre-v0.5.0
+// behaviour when an older config.xml is loaded for the first time.
+$requested_style = (string)$pluginCfg->rules->style;
+if (!in_array($requested_style, ["classic", "automation", "none"], true)) {
+    $requested_style = "classic";
+}
+$manage_rules = (string)$pluginCfg->rules->manage === "1";
+$last_style = (string)$pluginCfg->rules->last_applied_style;
+
+// Effective style: when manage_rules is off the plugin treats every rule
+// triplet as "none" — clean up old, create nothing new.
+$effective_style = $manage_rules ? $requested_style : "none";
+
+echo "rules: requested_style=$requested_style manage=" . ($manage_rules ? "1" : "0")
+    . " last=$last_style effective=$effective_style\n";
+
 // Interface list for the block rule. Accept either internal identifiers
-// (wan, opt1, ...) or the friendly names from the GUI (WAN, DSL, ...). Map
-// everything to the internal identifier pf expects.
+// or friendly GUI names; map everything to the internal identifier.
 $block_ifs_raw = (string)$pluginCfg->blacklist->block_interfaces;
 $block_ifs_input = array_filter(array_map("trim", explode(",", $block_ifs_raw)));
 if (empty($block_ifs_input)) {
@@ -86,347 +115,327 @@ $selfcare_rule_marker = "[os-abuseipdb] block self-defense list";
 $permaban_alias_name = "abuseipdb_permaban";
 $permaban_rule_marker = "[os-abuseipdb] block perma-block list";
 
-$dirty_model = false;
+$dirty_model = false;       // Alias model
+$dirty_classic = false;     // legacy <filter><rule>
+$dirty_filter = false;      // OPNsense\Firewall\Filter model
+$dirty_pluginCfg = false;   // Abuseipdb model (last_applied_style)
 
-// --- Alias (modern model) ---
+// =============================================================
+// Aliases (always managed, regardless of rule style)
+// =============================================================
+
 $alias_mdl = new Alias();
-$existing_alias = null;
-foreach ($alias_mdl->aliases->alias->iterateItems() as $uuid => $a) {
-    if ((string)$a->name === $alias_name) {
-        $existing_alias = $a;
-        break;
+
+function ensure_alias($alias_mdl, $name, $description, $want_present, &$dirty_model) {
+    $existing = null;
+    foreach ($alias_mdl->aliases->alias->iterateItems() as $uuid => $a) {
+        if ((string)$a->name === $name) {
+            $existing = $a;
+            break;
+        }
+    }
+    if ($want_present && $existing === null) {
+        $a = $alias_mdl->aliases->alias->Add();
+        $a->enabled = "1";
+        $a->name = $name;
+        // "external" = plugin manages pf-table content itself via pfctl;
+        // OPNsense doesn't try to fetch it (unlike urltable which only
+        // supports http[s]).
+        $a->type = "external";
+        $a->proto = "IPv4";
+        $a->counters = "1";
+        $a->description = $description;
+        $errs = $alias_mdl->performValidation();
+        if (count($errs) > 0) {
+            foreach ($errs as $e) echo "alias validation: " . $e->getMessage() . "\n";
+            exit(1);
+        }
+        $alias_mdl->serializeToConfig();
+        $dirty_model = true;
+        echo "alias $name created\n";
+    } else if ($existing !== null) {
+        echo "alias $name exists\n";
+    } else {
+        echo "alias $name skipped (disabled)\n";
     }
 }
 
-if ($plugin_enabled && $blacklist_on && $existing_alias === null) {
-    $a = $alias_mdl->aliases->alias->Add();
-    $a->enabled = "1";
-    $a->name = $alias_name;
-    // "external" = plugin manages pf-table content itself via pfctl,
-    // OPNsense doesn't try to fetch it (unlike urltable which only supports http[s]).
-    $a->type = "external";
-    $a->proto = "IPv4";
-    $a->counters = "1";
-    $a->description = "AbuseIPDB blacklist (populated by os-abuseipdb plugin)";
-    $errs = $alias_mdl->performValidation();
-    if (count($errs) > 0) {
-        foreach ($errs as $e) echo "alias validation: " . $e->getMessage() . "\n";
-        exit(1);
-    }
-    $alias_mdl->serializeToConfig();
-    $dirty_model = true;
-    echo "alias $alias_name created\n";
-} else if ($existing_alias !== null) {
-    echo "alias $alias_name exists\n";
-} else {
-    echo "alias skipped (plugin/blacklist disabled)\n";
-}
+ensure_alias($alias_mdl, $alias_name,           "AbuseIPDB blacklist (populated by os-abuseipdb plugin)",   $plugin_enabled && $blacklist_on, $dirty_model);
+ensure_alias($alias_mdl, $selfcare_alias_name,  "Self-defense blocklist (populated by os-abuseipdb reporter)", $plugin_enabled && $selfcare_on,  $dirty_model);
+ensure_alias($alias_mdl, $permaban_alias_name,  "Perma-block list (populated by os-abuseipdb)",             $plugin_enabled && $permaban_on,  $dirty_model);
 
-// --- Self-defense alias (separate pf table, populated by reporter) ---
-$existing_sc_alias = null;
-foreach ($alias_mdl->aliases->alias->iterateItems() as $uuid => $a) {
-    if ((string)$a->name === $selfcare_alias_name) {
-        $existing_sc_alias = $a;
-        break;
-    }
-}
-if ($plugin_enabled && $selfcare_on && $existing_sc_alias === null) {
-    $a = $alias_mdl->aliases->alias->Add();
-    $a->enabled = "1";
-    $a->name = $selfcare_alias_name;
-    $a->type = "external";
-    $a->proto = "IPv4";
-    $a->counters = "1";
-    $a->description = "Self-defense blocklist (populated by os-abuseipdb reporter)";
-    $errs = $alias_mdl->performValidation();
-    if (count($errs) > 0) {
-        foreach ($errs as $e) echo "selfcare alias validation: " . $e->getMessage() . "\n";
-        exit(1);
-    }
-    $alias_mdl->serializeToConfig();
-    $dirty_model = true;
-    echo "alias $selfcare_alias_name created\n";
-} else if ($existing_sc_alias !== null) {
-    echo "alias $selfcare_alias_name exists\n";
-} else {
-    echo "selfcare alias skipped (plugin/self-defense disabled)\n";
-}
+// =============================================================
+// Block rules — style-aware routing
+// =============================================================
 
-// --- Perma-block alias (separate pf table, populated by promotions) ---
-$existing_pb_alias = null;
-foreach ($alias_mdl->aliases->alias->iterateItems() as $uuid => $a) {
-    if ((string)$a->name === $permaban_alias_name) {
-        $existing_pb_alias = $a;
-        break;
-    }
-}
-if ($plugin_enabled && $permaban_on && $existing_pb_alias === null) {
-    $a = $alias_mdl->aliases->alias->Add();
-    $a->enabled = "1";
-    $a->name = $permaban_alias_name;
-    $a->type = "external";
-    $a->proto = "IPv4";
-    $a->counters = "1";
-    $a->description = "Perma-block list (populated by os-abuseipdb)";
-    $errs = $alias_mdl->performValidation();
-    if (count($errs) > 0) {
-        foreach ($errs as $e) echo "permaban alias validation: " . $e->getMessage() . "\n";
-        exit(1);
-    }
-    $alias_mdl->serializeToConfig();
-    $dirty_model = true;
-    echo "alias $permaban_alias_name created\n";
-} else if ($existing_pb_alias !== null) {
-    echo "alias $permaban_alias_name exists\n";
-} else {
-    echo "permaban alias skipped (plugin/permaban disabled)\n";
-}
+// ---- helpers: classic <filter><rule> ----
 
-// --- Block rule (classic <filter><rule>) ---
-global $config;
-// Defensive: fresh OPNsense installs (and minimal-config VPS images) ship
-// with `<filter></filter>` as an empty element. PHP's XML-to-array
-// deserialiser turns that into the string `""`, not an empty array. A bare
-// `isset` check passes for both cases, so we'd then fall through to
-// `$config["filter"]["rule"]` and PHP 8 throws "Cannot access offset of
-// type string on string". Force-normalise to array on every entry.
-if (!isset($config["filter"]) || !is_array($config["filter"])) $config["filter"] = [];
-if (!isset($config["filter"]["rule"]) || !is_array($config["filter"]["rule"])) {
-    $config["filter"]["rule"] = [];
-}
-// One more deserialiser quirk: if there is exactly ONE existing classic rule
-// in config.xml, OPNsense's array-of-rules collapses into a single
-// associative rule (keys are field names like "type", "descr", ...). Detect
-// this by checking whether any key is non-numeric, then wrap into a list so
-// the foreach below sees one entry instead of iterating field-by-field.
-if (!empty($config["filter"]["rule"])) {
-    $keys = array_keys($config["filter"]["rule"]);
-    $first = $keys[0];
-    if (!is_int($first)) {
-        $config["filter"]["rule"] = [$config["filter"]["rule"]];
+function classic_normalise(&$config) {
+    if (!isset($config["filter"]) || !is_array($config["filter"])) {
+        $config["filter"] = [];
+    }
+    if (!isset($config["filter"]["rule"]) || !is_array($config["filter"]["rule"])) {
+        $config["filter"]["rule"] = [];
+    }
+    if (!empty($config["filter"]["rule"])) {
+        $keys = array_keys($config["filter"]["rule"]);
+        if (!is_int($keys[0])) {
+            // Single-rule deserialisation quirk: wrap into a list.
+            $config["filter"]["rule"] = [$config["filter"]["rule"]];
+        }
     }
 }
 
-$rule_idx = null;
-foreach ($config["filter"]["rule"] as $i => $r) {
-    if (is_array($r) && (($r["descr"] ?? "") === $rule_marker)) {
-        $rule_idx = $i;
-        break;
+function classic_find(&$config, $marker) {
+    foreach ($config["filter"]["rule"] as $i => $r) {
+        if (is_array($r) && (($r["descr"] ?? "") === $marker)) {
+            return $i;
+        }
     }
+    return null;
 }
 
-$dirty_classic = false;
-
-// If interface selection changed (single↔floating or list changed), rebuild
-// the rule from scratch instead of trying to patch it. OPNsense drops the
-// rule when transitioning from floating to per-interface by mutating fields
-// in place, so the safe approach is to delete and re-create.
-if ($rule_idx !== null && $plugin_enabled && $blacklist_on) {
-    $cur_if = $config["filter"]["rule"][$rule_idx]["interface"] ?? "";
-    $cur_floating = !empty($config["filter"]["rule"][$rule_idx]["floating"]);
-    $need_floating = $is_floating;
-    if ($cur_if !== $block_ifs_csv || $cur_floating !== $need_floating) {
-        array_splice($config["filter"]["rule"], $rule_idx, 1);
-        $rule_idx = null;
+function classic_remove(&$config, $marker, &$dirty_classic) {
+    $idx = classic_find($config, $marker);
+    if ($idx !== null) {
+        array_splice($config["filter"]["rule"], $idx, 1);
         $dirty_classic = true;
-        echo "block rule: deleted (interface selection changed) — will recreate\n";
+        echo "classic: rule '$marker' removed\n";
+        return true;
     }
+    return false;
 }
 
-if ($plugin_enabled && $blacklist_on) {
-    // NOTE: leave "protocol" UNSET. Writing <protocol>any</protocol> makes the
-    // OPNsense rule generator emit "proto any" which pf rejects in combination
-    // with the auto-generated "{any}" destination macro. Omitting the field
-    // produces the classic pfSense-style rule without "proto".
-    $rule = [
-        "type"           => "block",
-        "interface"      => $block_ifs_csv,
-        "ipprotocol"     => "inet",
-        "statetype"      => "keep state",
-        "direction"      => "in",
-        "quick"          => "1",
-        "log"            => "1",
-        "disablereplyto" => "1",
-        "descr"          => $rule_marker,
-        "source"         => ["network" => $alias_name],
-        "destination"    => ["any" => "1"],
-        "created"        => ["username" => "os-abuseipdb", "time" => time()],
-        "updated"        => ["username" => "os-abuseipdb", "time" => time()],
-    ];
-    if ($is_floating) {
-        $rule["floating"] = "yes";
+function classic_apply(&$config, $marker, $alias, $block_ifs_csv, $is_floating, &$dirty_classic) {
+    $idx = classic_find($config, $marker);
+
+    // Interface change forces a delete+recreate (in-place mutation across
+    // the floating boundary leaves stale fields).
+    if ($idx !== null) {
+        $cur_if = $config["filter"]["rule"][$idx]["interface"] ?? "";
+        $cur_floating = !empty($config["filter"]["rule"][$idx]["floating"]);
+        if ($cur_if !== $block_ifs_csv || $cur_floating !== $is_floating) {
+            array_splice($config["filter"]["rule"], $idx, 1);
+            $idx = null;
+            $dirty_classic = true;
+            echo "classic: '$marker' deleted (interface change) — will recreate\n";
+        }
     }
-    if ($rule_idx === null) {
-        // Put it near the top so it blocks before any user pass rule on WAN
+
+    if ($idx === null) {
+        // NOTE: leave "protocol" UNSET. <protocol>any</protocol> makes the
+        // rule generator emit "proto any" which pf rejects in combination
+        // with the auto-generated "{any}" destination macro.
+        $rule = [
+            "type"           => "block",
+            "interface"      => $block_ifs_csv,
+            "ipprotocol"     => "inet",
+            "statetype"      => "keep state",
+            "direction"      => "in",
+            "quick"          => "1",
+            "log"            => "1",
+            "disablereplyto" => "1",
+            "descr"          => $marker,
+            "source"         => ["network" => $alias],
+            "destination"    => ["any" => "1"],
+            "created"        => ["username" => "os-abuseipdb", "time" => time()],
+            "updated"        => ["username" => "os-abuseipdb", "time" => time()],
+        ];
+        if ($is_floating) {
+            $rule["floating"] = "yes";
+        }
+        // Top of the rule list so attackers are blocked before any user
+        // pass rule.
         array_unshift($config["filter"]["rule"], $rule);
         $dirty_classic = true;
-        echo "WAN block rule inserted at top of user rules\n";
+        echo "classic: '$marker' created at top\n";
     } else {
-        // already present — ensure it isn't disabled and has disablereplyto
-        if (!empty($config["filter"]["rule"][$rule_idx]["disabled"])) {
-            unset($config["filter"]["rule"][$rule_idx]["disabled"]);
+        $changed = false;
+        if (!empty($config["filter"]["rule"][$idx]["disabled"])) {
+            unset($config["filter"]["rule"][$idx]["disabled"]);
+            $changed = true;
+        }
+        if (empty($config["filter"]["rule"][$idx]["disablereplyto"])) {
+            $config["filter"]["rule"][$idx]["disablereplyto"] = "1";
+            $changed = true;
+        }
+        if (isset($config["filter"]["rule"][$idx]["protocol"])) {
+            unset($config["filter"]["rule"][$idx]["protocol"]);
+            $changed = true;
+        }
+        if ($changed) {
             $dirty_classic = true;
-            echo "WAN block rule re-enabled\n";
+            echo "classic: '$marker' updated\n";
+        } else {
+            echo "classic: '$marker' already up to date\n";
         }
-        if (empty($config["filter"]["rule"][$rule_idx]["disablereplyto"])) {
-            $config["filter"]["rule"][$rule_idx]["disablereplyto"] = "1";
-            $dirty_classic = true;
-            echo "WAN block rule: disablereplyto migrated\n";
-        }
-        if (isset($config["filter"]["rule"][$rule_idx]["protocol"])) {
-            // "proto any" + destination macro "{any}" = pf syntax error; drop the field.
-            unset($config["filter"]["rule"][$rule_idx]["protocol"]);
-            $dirty_classic = true;
-            echo "block rule: protocol field removed (was causing 'proto any' syntax error)\n";
-        }
-        if (!$dirty_classic) {
-            echo "block rule exists\n";
-        }
-    }
-} else if ($rule_idx !== null) {
-    // plugin disabled → mark rule as disabled (don't delete — user may want to keep)
-    if (empty($config["filter"]["rule"][$rule_idx]["disabled"])) {
-        $config["filter"]["rule"][$rule_idx]["disabled"] = "1";
-        $dirty_classic = true;
-        echo "WAN block rule disabled\n";
     }
 }
 
-// --- Self-defense block rule (same structure as blacklist rule, own alias) ---
-$sc_rule_idx = null;
-foreach ($config["filter"]["rule"] as $i => $r) {
-    if (is_array($r) && (($r["descr"] ?? "") === $selfcare_rule_marker)) {
-        $sc_rule_idx = $i;
-        break;
+// ---- helpers: automation Filter model ----
+
+function automation_find($filter_mdl, $marker) {
+    foreach ($filter_mdl->rules->rule->iterateItems() as $uuid => $r) {
+        if ((string)$r->description === $marker) {
+            return [$uuid, $r];
+        }
     }
+    return [null, null];
 }
 
-if ($sc_rule_idx !== null && $plugin_enabled && $selfcare_on) {
-    $cur_if = $config["filter"]["rule"][$sc_rule_idx]["interface"] ?? "";
-    $cur_floating = !empty($config["filter"]["rule"][$sc_rule_idx]["floating"]);
-    $need_floating = $is_floating;
-    if ($cur_if !== $block_ifs_csv || $cur_floating !== $need_floating) {
-        array_splice($config["filter"]["rule"], $sc_rule_idx, 1);
-        $sc_rule_idx = null;
-        $dirty_classic = true;
-        echo "selfcare rule: deleted (interface selection changed) — will recreate\n";
+function automation_remove($filter_mdl, $marker, &$dirty_filter) {
+    [$uuid, $r] = automation_find($filter_mdl, $marker);
+    if ($uuid !== null) {
+        $filter_mdl->rules->rule->del($uuid);
+        $dirty_filter = true;
+        echo "automation: rule '$marker' removed\n";
+        return true;
     }
+    return false;
 }
 
-if ($plugin_enabled && $selfcare_on) {
-    $sc_rule = [
-        "type"           => "block",
-        "interface"      => $block_ifs_csv,
-        "ipprotocol"     => "inet",
-        "statetype"      => "keep state",
-        "direction"      => "in",
-        "quick"          => "1",
-        "log"            => "1",
-        "disablereplyto" => "1",
-        "descr"          => $selfcare_rule_marker,
-        "source"         => ["network" => $selfcare_alias_name],
-        "destination"    => ["any" => "1"],
-        "created"        => ["username" => "os-abuseipdb", "time" => time()],
-        "updated"        => ["username" => "os-abuseipdb", "time" => time()],
-    ];
-    if ($is_floating) {
-        $sc_rule["floating"] = "yes";
-    }
-    if ($sc_rule_idx === null) {
-        array_unshift($config["filter"]["rule"], $sc_rule);
-        $dirty_classic = true;
-        echo "selfcare block rule inserted at top of user rules\n";
+function automation_apply($filter_mdl, $marker, $alias, $block_ifs_csv, &$dirty_filter) {
+    [$uuid, $r] = automation_find($filter_mdl, $marker);
+
+    if ($r === null) {
+        $r = $filter_mdl->rules->rule->Add();
+        $r->enabled = "1";
+        $r->action = "block";
+        $r->quick = "1";
+        $r->interface = $block_ifs_csv;
+        $r->direction = "in";
+        $r->ipprotocol = "inet";
+        // Leave protocol at default "any". The Automation/Filter generator
+        // handles this differently to legacy <filter> — "any" is fine here.
+        $r->source_net = $alias;
+        $r->destination_net = "any";
+        $r->disablereplyto = "1";
+        $r->log = "1";
+        $r->description = $marker;
+        // Sequence 1 = top of the list. Multiple plugin rules with seq=1
+        // are tolerated; their relative order is then by add-order.
+        $r->sequence = "1";
+        $dirty_filter = true;
+        echo "automation: '$marker' created\n";
     } else {
-        if (!empty($config["filter"]["rule"][$sc_rule_idx]["disabled"])) {
-            unset($config["filter"]["rule"][$sc_rule_idx]["disabled"]);
-            $dirty_classic = true;
-            echo "selfcare block rule re-enabled\n";
+        $changed = false;
+        $want = [
+            "enabled"        => "1",
+            "action"         => "block",
+            "quick"          => "1",
+            "interface"      => $block_ifs_csv,
+            "direction"      => "in",
+            "ipprotocol"     => "inet",
+            "source_net"     => $alias,
+            "destination_net"=> "any",
+            "disablereplyto" => "1",
+            "log"            => "1",
+        ];
+        foreach ($want as $k => $v) {
+            $cur = (string)$r->$k;
+            if ($cur !== $v) {
+                $r->$k = $v;
+                $changed = true;
+            }
         }
-        if (empty($config["filter"]["rule"][$sc_rule_idx]["disablereplyto"])) {
-            $config["filter"]["rule"][$sc_rule_idx]["disablereplyto"] = "1";
-            $dirty_classic = true;
+        if ($changed) {
+            $dirty_filter = true;
+            echo "automation: '$marker' updated\n";
+        } else {
+            echo "automation: '$marker' already up to date\n";
         }
-        if (isset($config["filter"]["rule"][$sc_rule_idx]["protocol"])) {
-            unset($config["filter"]["rule"][$sc_rule_idx]["protocol"]);
-            $dirty_classic = true;
-        }
-    }
-} else if ($sc_rule_idx !== null) {
-    if (empty($config["filter"]["rule"][$sc_rule_idx]["disabled"])) {
-        $config["filter"]["rule"][$sc_rule_idx]["disabled"] = "1";
-        $dirty_classic = true;
-        echo "selfcare block rule disabled\n";
     }
 }
 
-// --- Perma-block rule (same structure, own alias, no TTL ever) ---
-$pb_rule_idx = null;
-foreach ($config["filter"]["rule"] as $i => $r) {
-    if (is_array($r) && (($r["descr"] ?? "") === $permaban_rule_marker)) {
-        $pb_rule_idx = $i;
-        break;
-    }
-}
+// ---- generic style-aware ensure ----
+//
+// Each rule triplet is described by:
+//   $marker     : description string used for idempotent lookup
+//   $alias      : alias name used as block source
+//   $want       : whether the rule should be present in the current
+//                 effective style (plugin+type enabled AND manage AND
+//                 effective != 'none')
+//
+// Cleanup happens unconditionally based on $last_style/$effective_style
+// transitions so stale rules from previous styles get removed.
 
-if ($pb_rule_idx !== null && $plugin_enabled && $permaban_on) {
-    $cur_if = $config["filter"]["rule"][$pb_rule_idx]["interface"] ?? "";
-    $cur_floating = !empty($config["filter"]["rule"][$pb_rule_idx]["floating"]);
-    $need_floating = $is_floating;
-    if ($cur_if !== $block_ifs_csv || $cur_floating !== $need_floating) {
-        array_splice($config["filter"]["rule"], $pb_rule_idx, 1);
-        $pb_rule_idx = null;
-        $dirty_classic = true;
-        echo "permaban rule: deleted (interface selection changed) — will recreate\n";
-    }
-}
+classic_normalise($config);
+$filter_mdl = new FwFilter();
 
-if ($plugin_enabled && $permaban_on) {
-    $pb_rule = [
-        "type"           => "block",
-        "interface"      => $block_ifs_csv,
-        "ipprotocol"     => "inet",
-        "statetype"      => "keep state",
-        "direction"      => "in",
-        "quick"          => "1",
-        "log"            => "1",
-        "disablereplyto" => "1",
-        "descr"          => $permaban_rule_marker,
-        "source"         => ["network" => $permaban_alias_name],
-        "destination"    => ["any" => "1"],
-        "created"        => ["username" => "os-abuseipdb", "time" => time()],
-        "updated"        => ["username" => "os-abuseipdb", "time" => time()],
-    ];
-    if ($is_floating) {
-        $pb_rule["floating"] = "yes";
-    }
-    if ($pb_rule_idx === null) {
-        array_unshift($config["filter"]["rule"], $pb_rule);
-        $dirty_classic = true;
-        echo "permaban block rule inserted at top of user rules\n";
-    } else {
-        if (!empty($config["filter"]["rule"][$pb_rule_idx]["disabled"])) {
-            unset($config["filter"]["rule"][$pb_rule_idx]["disabled"]);
-            $dirty_classic = true;
-            echo "permaban block rule re-enabled\n";
-        }
-        if (empty($config["filter"]["rule"][$pb_rule_idx]["disablereplyto"])) {
-            $config["filter"]["rule"][$pb_rule_idx]["disablereplyto"] = "1";
-            $dirty_classic = true;
-        }
-        if (isset($config["filter"]["rule"][$pb_rule_idx]["protocol"])) {
-            unset($config["filter"]["rule"][$pb_rule_idx]["protocol"]);
-            $dirty_classic = true;
+function ensure_rule($marker, $alias, $want, $effective_style, $last_style,
+                     $block_ifs_csv, $is_floating,
+                     &$config, $filter_mdl,
+                     &$dirty_classic, &$dirty_filter) {
+
+    // 1) Cleanup in the *previous* style if it's different from where
+    //    we want the rule to live now (or where we want NO rule).
+    if ($last_style !== "" && $last_style !== $effective_style) {
+        if ($last_style === "classic") {
+            classic_remove($config, $marker, $dirty_classic);
+        } else if ($last_style === "automation") {
+            automation_remove($filter_mdl, $marker, $dirty_filter);
         }
     }
-} else if ($pb_rule_idx !== null) {
-    if (empty($config["filter"]["rule"][$pb_rule_idx]["disabled"])) {
-        $config["filter"]["rule"][$pb_rule_idx]["disabled"] = "1";
-        $dirty_classic = true;
-        echo "permaban block rule disabled\n";
+
+    // 2) If the rule should not be present at all, also clean up in the
+    //    *current* effective style (covers the case last==current==none
+    //    after a previous run already cleaned, plus the case where the
+    //    type-specific toggle was just disabled).
+    if (!$want) {
+        if ($effective_style === "classic") {
+            classic_remove($config, $marker, $dirty_classic);
+        } else if ($effective_style === "automation") {
+            automation_remove($filter_mdl, $marker, $dirty_filter);
+        }
+        // else: effective=none, nothing to remove in 'none'.
+        return;
     }
+
+    // 3) Apply in the current effective style.
+    if ($effective_style === "classic") {
+        classic_apply($config, $marker, $alias, $block_ifs_csv, $is_floating, $dirty_classic);
+    } else if ($effective_style === "automation") {
+        automation_apply($filter_mdl, $marker, $alias, $block_ifs_csv, $dirty_filter);
+    }
+    // else: effective=none, no apply.
 }
 
-// --- Cron jobs ---
+ensure_rule(
+    $rule_marker, $alias_name,
+    $plugin_enabled && $blacklist_on,
+    $effective_style, $last_style,
+    $block_ifs_csv, $is_floating,
+    $config, $filter_mdl,
+    $dirty_classic, $dirty_filter
+);
+ensure_rule(
+    $selfcare_rule_marker, $selfcare_alias_name,
+    $plugin_enabled && $selfcare_on,
+    $effective_style, $last_style,
+    $block_ifs_csv, $is_floating,
+    $config, $filter_mdl,
+    $dirty_classic, $dirty_filter
+);
+ensure_rule(
+    $permaban_rule_marker, $permaban_alias_name,
+    $plugin_enabled && $permaban_on,
+    $effective_style, $last_style,
+    $block_ifs_csv, $is_floating,
+    $config, $filter_mdl,
+    $dirty_classic, $dirty_filter
+);
+
+// Persist the new "last applied style" if it actually changed.
+if ($last_style !== $effective_style) {
+    $pluginCfg->rules->last_applied_style = $effective_style;
+    $dirty_pluginCfg = true;
+    echo "rules: last_applied_style $last_style → $effective_style\n";
+}
+
+// =============================================================
+// Cron jobs (independent of rule style)
+// =============================================================
+
 $cron_mdl = new Cron();
 $dirty_cron = false;
 
@@ -467,7 +476,6 @@ function ensure_cron($mdl, $descr, $command, $m, $h, $desired_enabled) {
     return $changed;
 }
 
-// Download once per day at 03:13 (off-peak, avoid :00/:30)
 $dirty_cron |= ensure_cron(
     $cron_mdl,
     "os-abuseipdb: daily blacklist download",
@@ -475,8 +483,6 @@ $dirty_cron |= ensure_cron(
     "13", "3",
     $plugin_enabled && $blacklist_on
 );
-
-// Reporter every 5 minutes
 $dirty_cron |= ensure_cron(
     $cron_mdl,
     "os-abuseipdb: reporter run",
@@ -484,8 +490,6 @@ $dirty_cron |= ensure_cron(
     "*/5", "*",
     $plugin_enabled && $reporter_on
 );
-
-// Self-defense cleanup hourly at :07 (off-peak)
 $dirty_cron |= ensure_cron(
     $cron_mdl,
     "os-abuseipdb: self-defense cleanup",
@@ -493,11 +497,6 @@ $dirty_cron |= ensure_cron(
     "7", "*",
     $plugin_enabled && $selfcare_on
 );
-
-// Perma-Block auto-promote scan once per day at 03:23 (just after blacklist
-// download, off-peak). Reporter already promotes inline as IPs reappear; this
-// is a belt-and-suspenders sweep that catches anything missed (e.g. config
-// changes, manual edits to selfcare_history).
 $dirty_cron |= ensure_cron(
     $cron_mdl,
     "os-abuseipdb: perma-block auto-promote scan",
@@ -505,10 +504,6 @@ $dirty_cron |= ensure_cron(
     "23", "3",
     $plugin_enabled && $permaban_on
 );
-
-// Perma-Block hit counter sampler — every 5 min. Reads pf table counters
-// (in-memory kernel struct, ~50ms) and persists deltas in the DB so totals
-// survive reboots.
 $dirty_cron |= ensure_cron(
     $cron_mdl,
     "os-abuseipdb: perma-block hit counter sampler",
@@ -525,12 +520,28 @@ if ($dirty_cron) {
     }
 }
 
-// Save order matters. write_config() on the legacy $config array internally
-// rebuilds the SimpleXML tree *from that array* and thus wipes any model
-// changes we made earlier via $mdl->serializeToConfig(). So:
-//   1) write the classic $config array first (if anything classic changed)
-//   2) THEN re-serialize the model trees (alias + cron) to re-inject them
-//   3) THEN Config::save() commits the final tree to disk
+// =============================================================
+// Save phase
+// =============================================================
+//
+// write_config() rebuilds the SimpleXML tree from the legacy $config
+// array and wipes any model changes we made earlier via
+// $mdl->serializeToConfig(). Save order:
+//   1) write classic $config first (if classic is dirty)
+//   2) re-serialize all model trees
+//   3) Config::save() commits the final tree to disk
+//
+// Validate the Filter model before serialising — the Automation/Filter
+// generator is strict about field combinations.
+
+if ($dirty_filter) {
+    $errs = $filter_mdl->performValidation();
+    if (count($errs) > 0) {
+        foreach ($errs as $e) echo "filter validation: " . $e->getMessage() . "\n";
+        exit(1);
+    }
+}
+
 if ($dirty_classic) {
     write_config("os-abuseipdb: classic filter rule");
     echo "classic config saved\n";
@@ -539,19 +550,27 @@ if ($dirty_classic) {
 if ($dirty_model) {
     $alias_mdl->serializeToConfig();
 }
+if ($dirty_filter) {
+    $filter_mdl->serializeToConfig();
+}
 if ($dirty_cron) {
     $cron_mdl->serializeToConfig();
 }
+if ($dirty_pluginCfg) {
+    $pluginCfg->serializeToConfig();
+}
 
-if ($dirty_model || $dirty_cron) {
+if ($dirty_model || $dirty_filter || $dirty_cron || $dirty_pluginCfg) {
     Config::getInstance()->save();
     echo "model config saved\n";
 }
+
 if ($dirty_cron) {
     // Correct action name is 'restart' (not 'reload') — regenerates
-    // /var/cron/tabs/nobody from the cron template and restarts the daemon.
+    // /var/cron/tabs/nobody and restarts the daemon.
     shell_exec("/usr/local/sbin/configctl cron restart");
 }
-if (!$dirty_model && !$dirty_classic && !$dirty_cron) {
+
+if (!$dirty_model && !$dirty_classic && !$dirty_filter && !$dirty_cron && !$dirty_pluginCfg) {
     echo "no changes\n";
 }

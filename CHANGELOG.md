@@ -3,6 +3,22 @@
 All notable changes to this project are documented here.
 The format roughly follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project uses [Semantic Versioning](https://semver.org/).
 
+## [0.5.0] — 2026-05-07
+
+### Added
+- **Configurable rule style.** New dropdown on the *General* tab — *Rule style* — choosing between three modes:
+  - **Classic** (legacy `<filter><rule>` in `Firewall → Rules → WAN`) — the previous, hard-coded behaviour. Remains the default for upgraded installs that had no setting before.
+  - **Automation** (modern `OPNsense\Firewall\Filter` model under `Firewall → Automation → Filter`) — the plugin's three block rules show up in the new Rules tab alongside hand-curated rules, sequenced at 1 so they fire first. Idempotent: matched by description marker, never duplicated.
+  - **None** — plugin only maintains the three pf-table aliases (`abuseipdb_blacklist`, `abuseipdb_selfcare`, `abuseipdb_permaban`); the operator crafts their own block rules against those aliases. Preferred by users who keep tight ordering control over their rule list.
+- **Manage block rules on save** checkbox. When unticked, the plugin removes its own rules on the next save and never touches firewall rules again — handy when an operator wants the plugin purely as a data feeder for the alias.
+- **Automatic cleanup on style switch.** The plugin remembers the previously-applied style (`rules.last_applied_style`) and on every save removes its rules from that location before creating fresh ones in the newly-chosen style. No orphaned plugin rules, no duplicates.
+
+  Triggered by community feedback (Constantin, GitHub issue) — power users who migrated their rule list to the new Automation/Filter tab were losing the rule order they curated, because the plugin kept dropping its block rules into the legacy WAN tab.
+
+### Notes
+- Schema bump `Abuseipdb.xml`: `0.1.2 → 0.1.3`. New `<rules>` group with `style` (default `classic`), `manage` (default `1`), `last_applied_style` (internal, plugin-managed). Pre-existing configs read with the defaults — no manual migration required.
+- `setup.php` refactored: the rule lifecycle is factored out of three near-identical blocks into reusable helpers (`classic_apply`, `classic_remove`, `automation_apply`, `automation_remove`) routed by an `ensure_rule()` dispatcher.
+
 ## [0.4.2] — 2026-05-07
 
 ### Fixed
