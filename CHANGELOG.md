@@ -3,6 +3,11 @@
 All notable changes to this project are documented here.
 The format roughly follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project uses [Semantic Versioning](https://semver.org/).
 
+## [0.7.1] — 2026-05-16
+
+### Changed
+- **Default report comment now identifies the plugin by name.** Changed from `Blocked by OPNsense firewall; …` to `Blocked by os-abuseipdb; …`. Affects the model default (so fresh installs and saved-without-customisation operators get the new wording) and the in-code fallback used when the configured template has a placeholder typo. Operators who already customised the *Comment template* field on the Reporter tab keep their own text untouched.
+
 ## [0.7.0] — 2026-05-16
 
 ### Added

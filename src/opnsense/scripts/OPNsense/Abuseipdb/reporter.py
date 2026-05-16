@@ -335,7 +335,7 @@ def main() -> int:
     default_categories = cfg["reporter"]["default_categories"].strip() or "14,15"
     comment_template = (cfg["reporter"].get("comment_template", "") or "").strip()
     if not comment_template:
-        comment_template = ("Blocked by OPNsense firewall; {count} hits, "
+        comment_template = ("Blocked by os-abuseipdb; {count} hits, "
                             "proto={protos}, ports={ports}")
     dry_run = cfg["reporter"]["dry_run"] == "1"
     precheck = cfg["reporter"]["precheck"] == "1"
@@ -470,7 +470,7 @@ def main() -> int:
         except (KeyError, IndexError, ValueError):
             # Bad template — fall back to the built-in form so the run is
             # never blocked by a typo in the settings field.
-            comment = (f"Blocked by OPNsense firewall; {info['count']} hits, "
+            comment = (f"Blocked by os-abuseipdb; {info['count']} hits, "
                        f"proto={protos}, ports={ports}")
 
         if dry_run:

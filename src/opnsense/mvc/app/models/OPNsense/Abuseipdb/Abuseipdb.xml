@@ -129,7 +129,7 @@
             <comment_template type="TextField">
                 <Mask>/^.{1,500}$/u</Mask>
                 <ValidationMessage>1-500 chars. Placeholders {count}, {protos}, {ports}, {iface}, {src_ip}.</ValidationMessage>
-                <default>Blocked by OPNsense firewall; {count} hits, proto={protos}, ports={ports}</default>
+                <default>Blocked by os-abuseipdb; {count} hits, proto={protos}, ports={ports}</default>
                 <Required>Y</Required>
             </comment_template>
             <dry_run type="BooleanField">
