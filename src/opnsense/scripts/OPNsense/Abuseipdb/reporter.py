@@ -23,7 +23,8 @@ import time
 from collections import defaultdict
 from _common import (API_BASE, PF_TABLE_PERMABAN, PF_TABLE_SELFCARE,
                      STATE_DIR, die, ensure_state_dir, get_config, get_db,
-                     get_iface_map, log)
+                     get_iface_map, get_local_networks,
+                     get_wan_iface_phys_names, log)
 
 try:
     import requests
@@ -83,7 +84,10 @@ def check_abuseipdb(api_key: str, ip: str) -> tuple[int | None, str]:
 def parse_line(line: str):
     """Return (rule_label, action, src_ip, dst_port, proto, ifname) or None.
     ifname is the physical interface name from the log (e.g. 'vtnet0', 'igb1').
-    Handles both IPv4 and IPv6 block events (column layouts differ)."""
+    Handles both IPv4 and IPv6 block events (column layouts differ).
+    Only inbound block events (parts[7] == 'in') are returned — outbound
+    drops are local-egress events whose 'source' is one of our own clients
+    and must never reach the AbuseIPDB submit path."""
     m = META_SPLIT.search(line)
     if not m:
         return None
@@ -95,7 +99,8 @@ def parse_line(line: str):
         rule_label = parts[3]
         ifname = parts[4]
         action = parts[6]
-        if action != "block":
+        direction = parts[7]
+        if action != "block" or direction != "in":
             return None
         ip_version = parts[8]
         if ip_version == "4":
@@ -111,6 +116,23 @@ def parse_line(line: str):
         return rule_label, action, src_ip, dst_port, proto, ifname
     except (IndexError, ValueError):
         return None
+
+
+def is_local_source(ip_str: str, local_nets) -> bool:
+    """True if the address lives in a directly-connected subnet on this
+    OPNsense. This is the v6 equivalent of the RFC1918 check inside
+    is_private(): for IPv4 LAN clients the source is private by definition,
+    but for IPv6 the LAN clients hold global addresses out of the WAN-
+    delegated prefix (or a stale earlier prefix while the ISP rotates).
+    We check the actual interface networks to catch those."""
+    try:
+        ip = ipaddress.ip_address(ip_str)
+    except ValueError:
+        return False
+    for net in local_nets:
+        if ip.version == net.version and ip in net:
+            return True
+    return False
 
 
 def get_rule_descr_by_label(label: str) -> str | None:
@@ -330,6 +352,14 @@ def main() -> int:
     # resolved at display time so renaming an interface doesn't invalidate
     # historic data.
     iface_map = get_iface_map()
+    # WAN-like physical interfaces (with a configured gateway or dynamic
+    # ipaddr/ipaddrv6). Block events on anything outside this set are
+    # egress drops on a LAN/OPT-LAN interface — never AbuseIPDB material.
+    wan_phys = get_wan_iface_phys_names()
+    # Directly-connected subnets (v4 + v6) — used to catch LAN clients
+    # whose source IP is globally routable (IPv6 SLAAC out of a delegated
+    # prefix, or a stale prefix while the ISP rotates).
+    local_nets = get_local_networks()
 
     # Aggregate hits per IP
     hits: dict[str, dict] = defaultdict(lambda: {"count": 0, "labels": set(), "ports": set(), "protos": set(), "ifaces": set()})
@@ -338,7 +368,17 @@ def main() -> int:
         if not parsed:
             continue
         rule_label, action, src_ip, dst_port, proto, ifname = parsed
+        # Defence layer 1: only count events on WAN-like interfaces.
+        # If wan_phys is empty (config read failed) we fall through to
+        # the per-IP defences below rather than silently dropping every
+        # event.
+        if wan_phys and ifname not in wan_phys:
+            continue
         if is_private(src_ip):
+            continue
+        # Defence layer 2: drop sources that live in any directly-connected
+        # subnet on this box (covers IPv6 GUA LAN clients).
+        if is_local_source(src_ip, local_nets):
             continue
         # Skip hits from our own rule
         descr = get_rule_descr_by_label(rule_label) or ""

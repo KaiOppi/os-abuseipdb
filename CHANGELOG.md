@@ -3,6 +3,23 @@
 All notable changes to this project are documented here.
 The format roughly follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project uses [Semantic Versioning](https://semver.org/).
 
+## [0.6.2] — 2026-05-16
+
+### Fixed
+- **Reporter no longer treats LAN block events as attacker traffic.** A consequence of opening up IPv6 in v0.6.0: until now the reporter accepted every `block`-event from the filter log, regardless of which interface it came from. For IPv4 that was harmless because LAN-side blocks always have RFC1918 source addresses and `is_private()` filtered them out. For IPv6 the LAN clients carry **globally routable GUA** addresses out of the WAN-delegated prefix (or a previously-cached prefix while the ISP rotates), so the global-vs-private split no longer maps to local-vs-remote — a `block,in` event on the LAN interface produced by an iPhone with a stale Privacy-Extension address was getting `/check`-ed against AbuseIPDB every reporter cycle. No successful `/report` ever went out (the pre-check kept them under the confidence threshold), but the lookup traffic alone is leakage we don't want.
+
+  Two new defensive layers in `reporter.py`:
+  - **WAN-interface filter.** `parse_line()` now keeps a parsed record only if (a) the event direction is `in` (outbound drops are local-egress events whose "source" is one of our own clients) and (b) the physical interface name appears in the set returned by the new `get_wan_iface_phys_names()` helper in `_common.py`. That helper reads `/conf/config.xml` and flags any interface configured with a static gateway, gateway6, or a dynamic family like `pppoe`, `dhcp`, `slaac`, `track6`, etc.
+  - **Connected-network filter.** Sources whose address falls inside any directly-connected subnet on this box are skipped via the new `is_local_source()` check, fed by `get_local_networks()` (parses `ifconfig` for v4 + v6 networks). Catches LAN clients with current-prefix GUAs.
+
+  Belt-and-braces: a stale-prefix GUA from a prior PD rotation is caught by the WAN-interface filter even though the connected-network filter doesn't know about the previous prefix.
+
+  Verified on the home OPNsense: WAN set resolves to `{'pppoe0','vlan03'}`, local-networks list picks up all VLAN subnets plus the `2a11:fb80:296:400::/60` PD plus the WireGuard tunnels. A `vlan01` LAN-side `block,in` line with source `2a11:fb80:2e1:3700::1a8c` (stale prefix) now drops out of the reporter pipeline.
+
+### Notes
+- No schema change, no migration. The new helpers are read-only against `ifconfig` and `/conf/config.xml`.
+- Single-WAN, dual-WAN, and PPPoE setups all worked in testing. If `get_wan_iface_phys_names()` returns an empty set (config read failure), the WAN-interface filter is treated as inactive so an unexpected parser breakage doesn't silently drop every event — the per-IP defences (`is_private`, `is_local_source`, own-rule marker) still run.
+
 ## [0.6.1] — 2026-05-16
 
 ### Fixed
