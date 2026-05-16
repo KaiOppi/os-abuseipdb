@@ -24,6 +24,12 @@
         <help>The AbuseIPDB /blacklist endpoint defaults to IPv4-only. Enable this to make a second explicit IPv6 call and merge both lists into the pf table. Costs one extra blacklist quota slot per scheduled run.</help>
     </field>
     <field>
+        <id>abuseipdb.blacklist.persist_days</id>
+        <label>Persist days (0 = replace)</label>
+        <type>text</type>
+        <help>Default 0 = original behaviour: each download replaces the pf table with today's AbuseIPDB top-N. Set to a positive number (e.g. 30) to instead keep every IP for that many days from first sight; IPs that fall off today's top list stay in the table until the TTL expires. Catches sleeper IPs that drop out of the hot 10k but become active again later. Memory grows roughly linearly with the value — at 30 days you might end up with ~50-100k entries depending on overlap.</help>
+    </field>
+    <field>
         <id>abuseipdb.blacklist.block_interfaces</id>
         <label>Block on interface(s)</label>
         <type>text</type>

@@ -89,6 +89,57 @@ def write_blocklist(ips: list[str]) -> None:
     os.replace(tmp, BLOCKLIST_FILE)
 
 
+def merge_into_persistent(db, fresh_ips: list[str], ttl_days: int) -> tuple[int, int, int]:
+    """Merge today's download into the persistent table:
+      - INSERT OR IGNORE the new IPs (first_seen stays at original ts).
+      - UPDATE last_seen_ts for every IP we still see in today's pull
+        — that's our heartbeat so the cleanup knows the IP is still on
+        AbuseIPDB's radar.
+      - DELETE rows whose first_seen_ts is older than ttl_days * 86400.
+    Returns (added, refreshed, evicted).
+    """
+    import time as _time
+    now = int(_time.time())
+    added = 0
+    refreshed = 0
+    for ip in fresh_ips:
+        cur = db.execute(
+            "SELECT 1 FROM blacklist_persistent WHERE ip = ?", (ip,)
+        ).fetchone()
+        if cur is None:
+            db.execute(
+                "INSERT INTO blacklist_persistent (ip, first_seen_ts, last_seen_ts) "
+                "VALUES (?, ?, ?)",
+                (ip, now, now),
+            )
+            added += 1
+        else:
+            db.execute(
+                "UPDATE blacklist_persistent SET last_seen_ts = ? WHERE ip = ?",
+                (now, ip),
+            )
+            refreshed += 1
+    # TTL on first_seen — once an IP has been in the persistent set for
+    # ttl_days, it leaves regardless of whether AbuseIPDB still ships it.
+    # That gives Constantin's "sleeper protection" a bounded memory cost.
+    cutoff = now - ttl_days * 86400
+    evicted = db.execute(
+        "DELETE FROM blacklist_persistent WHERE first_seen_ts < ?", (cutoff,)
+    ).rowcount or 0
+    db.commit()
+    return added, refreshed, evicted
+
+
+def collect_persistent_ips(db) -> list[str]:
+    """Return all IPs currently in the persistent table, ordered for stable
+    output. pf doesn't care about order; this is purely for reproducibility
+    in the blocklist file."""
+    rows = db.execute(
+        "SELECT ip FROM blacklist_persistent ORDER BY ip"
+    ).fetchall()
+    return [r[0] for r in rows]
+
+
 def reload_pf_table() -> str:
     """Reload the pf table if it exists. Returns a short status message."""
     # Table only exists if OPNsense has built it from a URL-table alias.
@@ -129,20 +180,38 @@ def main() -> int:
     conf_min = int(cfg["blacklist"]["confidence_min"])
     max_ips = int(cfg["blacklist"]["max_ips"])
     include_ipv6 = cfg["blacklist"].get("include_ipv6", "0") == "1"
+    persist_days = int(cfg["blacklist"].get("persist_days", "0"))
 
     log(f"starting blacklist fetch (confidence={conf_min}, limit={max_ips}, "
-        f"include_ipv6={include_ipv6})")
+        f"include_ipv6={include_ipv6}, persist_days={persist_days})")
     try:
-        ips, quota = fetch_blacklist(api_key, conf_min, max_ips, include_ipv6)
+        fresh_ips, quota = fetch_blacklist(api_key, conf_min, max_ips, include_ipv6)
     except Exception as exc:
         record_run(False, 0, None, str(exc)[:200])
         die(f"fetch failed: {exc}")
 
-    write_blocklist(ips)
-    pf_msg = reload_pf_table()
-    msg = f"downloaded {len(ips)} IPs, quota={quota}, {pf_msg}"
+    if persist_days > 0:
+        # Persistent mode: keep every IP we've ever seen for `persist_days`,
+        # refresh last_seen each time it reappears in the daily pull.
+        db = get_db()
+        added, refreshed, evicted = merge_into_persistent(db, fresh_ips, persist_days)
+        merged_ips = collect_persistent_ips(db)
+        db.close()
+        write_blocklist(merged_ips)
+        pf_msg = reload_pf_table()
+        msg = (f"persistent mode: {len(fresh_ips)} fresh ({added} new, "
+               f"{refreshed} refreshed), {evicted} evicted by TTL, "
+               f"{len(merged_ips)} total in table, quota={quota}, {pf_msg}")
+        record_run(True, len(merged_ips), quota, msg)
+    else:
+        # Replace mode (default, original behaviour): the pf table is exactly
+        # today's AbuseIPDB top-N — yesterday's content gone.
+        write_blocklist(fresh_ips)
+        pf_msg = reload_pf_table()
+        msg = f"replace mode: downloaded {len(fresh_ips)} IPs, quota={quota}, {pf_msg}"
+        record_run(True, len(fresh_ips), quota, msg)
+
     log(msg)
-    record_run(True, len(ips), quota, msg)
     print(msg)
     return 0
 

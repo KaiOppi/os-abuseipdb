@@ -5,7 +5,7 @@
 set -eu
 
 NAME=os-abuseipdb
-VERSION=0.6.2
+VERSION=0.7.0
 ARCH=FreeBSD:14:amd64
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"

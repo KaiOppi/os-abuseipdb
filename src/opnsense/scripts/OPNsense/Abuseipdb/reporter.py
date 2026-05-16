@@ -333,6 +333,10 @@ def main() -> int:
     rate_min = int(cfg["reporter"]["rate_limit_per_ip_min"])
     daily_quota = int(cfg["reporter"]["daily_quota"])
     default_categories = cfg["reporter"]["default_categories"].strip() or "14,15"
+    comment_template = (cfg["reporter"].get("comment_template", "") or "").strip()
+    if not comment_template:
+        comment_template = ("Blocked by OPNsense firewall; {count} hits, "
+                            "proto={protos}, ports={ports}")
     dry_run = cfg["reporter"]["dry_run"] == "1"
     precheck = cfg["reporter"]["precheck"] == "1"
     precheck_min_conf = int(cfg["reporter"]["precheck_min_confidence"])
@@ -455,7 +459,19 @@ def main() -> int:
             )
             continue
 
-        comment = f"Blocked by OPNsense firewall; {info['count']} hits, proto={protos}, ports={ports}"
+        try:
+            comment = comment_template.format(
+                count=info["count"],
+                protos=protos,
+                ports=ports,
+                iface=ifaces_csv,
+                src_ip=ip,
+            )
+        except (KeyError, IndexError, ValueError):
+            # Bad template — fall back to the built-in form so the run is
+            # never blocked by a typo in the settings field.
+            comment = (f"Blocked by OPNsense firewall; {info['count']} hits, "
+                       f"proto={protos}, ports={ports}")
 
         if dry_run:
             db.execute(

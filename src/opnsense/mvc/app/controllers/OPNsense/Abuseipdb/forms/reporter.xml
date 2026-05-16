@@ -47,4 +47,10 @@
         <type>text</type>
         <help>Comma-separated AbuseIPDB category IDs used when a rule has no specific mapping. 14=PortScan, 15=Hacking, 18=BruteForce, 22=SSH.</help>
     </field>
+    <field>
+        <id>abuseipdb.reporter.comment_template</id>
+        <label>Comment template</label>
+        <type>text</type>
+        <help>Text submitted as the report comment. Placeholders: {count} hits, {protos}, {ports}, {iface}, {src_ip}. Max 1000 chars after substitution (API limit 1024). Default is the historical built-in.</help>
+    </field>
 </form>

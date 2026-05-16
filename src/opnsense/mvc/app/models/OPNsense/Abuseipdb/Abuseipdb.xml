@@ -1,7 +1,7 @@
 <model>
     <mount>//OPNsense/Abuseipdb</mount>
     <description>AbuseIPDB plugin configuration</description>
-    <version>0.1.4</version>
+    <version>0.1.5</version>
     <items>
         <general>
             <enabled type="BooleanField">
@@ -55,6 +55,12 @@
                 <default>0</default>
                 <Required>Y</Required>
             </include_ipv6>
+            <persist_days type="IntegerField">
+                <MinimumValue>0</MinimumValue>
+                <MaximumValue>365</MaximumValue>
+                <default>0</default>
+                <Required>Y</Required>
+            </persist_days>
             <block_interfaces type="TextField">
                 <default>wan</default>
                 <Mask>/^[a-zA-Z0-9_,\s]*$/u</Mask>
@@ -120,6 +126,12 @@
                 <default>14,15</default>
                 <Required>Y</Required>
             </default_categories>
+            <comment_template type="TextField">
+                <Mask>/^.{1,500}$/u</Mask>
+                <ValidationMessage>1-500 chars. Placeholders {count}, {protos}, {ports}, {iface}, {src_ip}.</ValidationMessage>
+                <default>Blocked by OPNsense firewall; {count} hits, proto={protos}, ports={ports}</default>
+                <Required>Y</Required>
+            </comment_template>
             <dry_run type="BooleanField">
                 <default>1</default>
                 <Required>Y</Required>

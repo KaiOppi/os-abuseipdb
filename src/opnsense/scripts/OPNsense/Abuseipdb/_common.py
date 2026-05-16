@@ -31,6 +31,7 @@ DEFAULT_CONFIG = {
         "confidence_min": "90",
         "max_ips": "10000",
         "include_ipv6": "0",
+        "persist_days": "0",
         "schedule": "0 3 * * *",
     },
     "reporter": {
@@ -39,6 +40,7 @@ DEFAULT_CONFIG = {
         "rate_limit_per_ip_min": "15",
         "daily_quota": "900",
         "default_categories": "14,15",
+        "comment_template": "Blocked by OPNsense firewall; {count} hits, proto={protos}, ports={ports}",
         "dry_run": "1",
         "precheck": "1",
         "precheck_min_confidence": "25",
@@ -116,6 +118,18 @@ def get_db() -> sqlite3.Connection:
             added_ts INTEGER NOT NULL,
             source TEXT,
             note TEXT
+        )
+    """)
+    # v0.7.0: persistent blacklist — when blacklist.persist_days > 0 the
+    # downloader keeps every IP it ever saw for up to N days, instead of
+    # replacing the table each run with the current AbuseIPDB top-N. Catches
+    # sleeper IPs that drop out of today's hot 10k but become active again
+    # later (Constantin's wishlist).
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS blacklist_persistent (
+            ip TEXT PRIMARY KEY,
+            first_seen_ts INTEGER NOT NULL,
+            last_seen_ts INTEGER NOT NULL
         )
     """)
     # Schema migrations — additive only, never destructive.

@@ -3,6 +3,24 @@
 All notable changes to this project are documented here.
 The format roughly follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project uses [Semantic Versioning](https://semver.org/).
 
+## [0.7.0] — 2026-05-16
+
+### Added
+- **Persistent blacklist mode (sleeper protection).** The downloader has been a *replace* operation since v0.1: every run swapped the pf table for today's AbuseIPDB top-N (default 10k). An IP that drops out of the hot list — but reactivates a week later — was no longer in our table when it came back. New optional persistent mode keeps every IP we've ever seen for a configurable number of days, refreshing the `last_seen` timestamp every time it reappears in the daily pull. Sleepers stay covered until their first-seen age crosses the TTL.
+
+  New setting on the Blacklist tab: **Persist days** (default `0` = original replace behaviour for back-compat; set to e.g. `30` to enable). New SQLite table `blacklist_persistent(ip, first_seen_ts, last_seen_ts)`. The pf table is regenerated from the merged set on every download. Cleanup is integrated into the download path itself — `DELETE FROM blacklist_persistent WHERE first_seen_ts < (now - persist_days*86400)`.
+
+  Wishlist item from community user *Constantin* (CKbeats), motivated by the observation that AbuseIPDB's `/blacklist` endpoint always returns the currently-hottest IPs and his attack logs showed re-activation cycles longer than the daily snapshot window.
+
+- **Configurable report comment template.** The `comment` field submitted to `POST /api/v2/report` was a hardcoded string `Blocked by OPNsense firewall; N hits, proto=…, ports=…`. New setting **Comment template** on the Reporter tab lets the operator change it. Supported placeholders: `{count}`, `{protos}`, `{ports}`, `{iface}`, `{src_ip}`. Default keeps the historical text. Bad templates (typo / unknown placeholder) fall back to the built-in form so a config mistake never blocks a reporter run. Output is capped at 1000 characters before submit (AbuseIPDB API limit is 1024).
+
+  Also from Constantin's wishlist (marked "nice to have, no must").
+
+### Notes
+- Schema bump `Abuseipdb.xml`: `0.1.4 → 0.1.5`. Two new fields: `blacklist.persist_days` (IntegerField, default 0) and `reporter.comment_template` (TextField, default = historical hardcoded string). No data migration needed.
+- The persistent blacklist table is created on first `get_db()` call, so existing installs see no migration step. Memory growth is bounded by `persist_days` × daily new-IP rate; at 30 days expect roughly 30-100 k entries depending on overlap.
+- Constantin's third request — mirroring the AbuseIPDB blacklist into the Self-Defense table — was intentionally not implemented. With persistent blacklist mode the same protection is delivered by the blacklist table itself, without the conceptual confusion of treating an external snapshot as a local hit (which would otherwise feed the Perma-Block auto-promote threshold).
+
 ## [0.6.2] — 2026-05-16
 
 ### Fixed
