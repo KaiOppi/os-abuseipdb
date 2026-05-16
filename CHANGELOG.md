@@ -3,6 +3,13 @@
 All notable changes to this project are documented here.
 The format roughly follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project uses [Semantic Versioning](https://semver.org/).
 
+## [0.7.2] — 2026-05-16
+
+### Fixed
+- **`&lt;` shown literally in the Reports tab.** One reporter SKIP-message contained a raw `<` character (`"SKIP: precheck confidence 0<25 ..."`), which OPNsense's Phalcon JSON layer HTML-encodes on the way to the browser as an XSS defence. The frontend then renders `&lt;` literally, since `jQuery.text()` treats the entity as text. Replaced the operator with the word *below* so the entire reporter pipeline stays HTML-safe without depending on the framework to round-trip entities cleanly.
+
+  Net effect for operators: new SKIP rows read `"SKIP: precheck confidence 0 below 25 (...)"` instead of the half-encoded version. Old rows in the local DB are untouched — if they bother you, run `sqlite3 /var/db/abuseipdb/state.sqlite "UPDATE reports SET message = REPLACE(message, '<', ' below ') WHERE message LIKE 'SKIP: precheck confidence%<%'"` once.
+
 ## [0.7.1] — 2026-05-16
 
 ### Changed

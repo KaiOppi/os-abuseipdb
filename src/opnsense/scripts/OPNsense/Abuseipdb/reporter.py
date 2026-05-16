@@ -436,7 +436,7 @@ def main() -> int:
             if conf < precheck_min_conf:
                 db.execute(
                     "INSERT OR REPLACE INTO reports (ts, ip, categories, ok, message, iface) VALUES (?, ?, ?, ?, ?, ?)",
-                    (ts, ip, default_categories, 0, f"SKIP: precheck confidence {conf}<{precheck_min_conf} ({check_msg})"[:200], ifaces_csv),
+                    (ts, ip, default_categories, 0, f"SKIP: precheck confidence {conf} below {precheck_min_conf} ({check_msg})"[:200], ifaces_csv),
                 )
                 continue
             precheck_passed = True
