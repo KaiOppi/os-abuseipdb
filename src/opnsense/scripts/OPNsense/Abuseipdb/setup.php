@@ -142,7 +142,11 @@ function ensure_alias($alias_mdl, $name, $description, $want_present, &$dirty_mo
         // OPNsense doesn't try to fetch it (unlike urltable which only
         // supports http[s]).
         $a->type = "external";
-        $a->proto = "IPv4";
+        // proto is an OptionField with Multiple=Y; "IPv4,IPv6" makes the
+        // pf table accept both families, which is required for the IPv6
+        // entries the reporter and the manual permaban-add can produce
+        // since v0.6.0.
+        $a->proto = "IPv4,IPv6";
         $a->counters = "1";
         $a->description = $description;
         $errs = $alias_mdl->performValidation();
@@ -154,7 +158,17 @@ function ensure_alias($alias_mdl, $name, $description, $want_present, &$dirty_mo
         $dirty_model = true;
         echo "alias $name created\n";
     } else if ($existing !== null) {
-        echo "alias $name exists\n";
+        // Upgrade-path: pre-0.6.0 installs had proto="IPv4" only. Promote to
+        // dual-family so the table can hold IPv6 entries without revoke.
+        $cur_proto = (string)$existing->proto;
+        if ($cur_proto !== "IPv4,IPv6") {
+            $existing->proto = "IPv4,IPv6";
+            $alias_mdl->serializeToConfig();
+            $dirty_model = true;
+            echo "alias $name upgraded proto: '$cur_proto' -> 'IPv4,IPv6'\n";
+        } else {
+            echo "alias $name exists\n";
+        }
     } else {
         echo "alias $name skipped (disabled)\n";
     }
@@ -226,10 +240,13 @@ function classic_apply(&$config, $marker, $alias, $block_ifs_csv, $is_floating, 
         // NOTE: leave "protocol" UNSET. <protocol>any</protocol> makes the
         // rule generator emit "proto any" which pf rejects in combination
         // with the auto-generated "{any}" destination macro.
+        // ipprotocol="inet46" covers both IPv4 and IPv6 in one rule (OPNsense
+        // emits two pf rules under the hood, one per family) — required since
+        // v0.6.0 because the source alias is now dual-family.
         $rule = [
             "type"           => "block",
             "interface"      => $block_ifs_csv,
-            "ipprotocol"     => "inet",
+            "ipprotocol"     => "inet46",
             "statetype"      => "keep state",
             "direction"      => "in",
             "quick"          => "1",
@@ -261,6 +278,12 @@ function classic_apply(&$config, $marker, $alias, $block_ifs_csv, $is_floating, 
         }
         if (isset($config["filter"]["rule"][$idx]["protocol"])) {
             unset($config["filter"]["rule"][$idx]["protocol"]);
+            $changed = true;
+        }
+        // v0.6.0 upgrade: promote single-family inet/inet6 rules to inet46.
+        $cur_ipp = $config["filter"]["rule"][$idx]["ipprotocol"] ?? "";
+        if ($cur_ipp !== "inet46") {
+            $config["filter"]["rule"][$idx]["ipprotocol"] = "inet46";
             $changed = true;
         }
         if ($changed) {
@@ -304,7 +327,9 @@ function automation_apply($filter_mdl, $marker, $alias, $block_ifs_csv, &$dirty_
         $r->quick = "1";
         $r->interface = $block_ifs_csv;
         $r->direction = "in";
-        $r->ipprotocol = "inet";
+        // inet46 = match IPv4 + IPv6 in the same rule (OPNsense emits two
+        // pf rules under the hood). Matches the dual-family alias proto.
+        $r->ipprotocol = "inet46";
         // Leave protocol at default "any". The Automation/Filter generator
         // handles this differently to legacy <filter> — "any" is fine here.
         $r->source_net = $alias;
@@ -325,7 +350,7 @@ function automation_apply($filter_mdl, $marker, $alias, $block_ifs_csv, &$dirty_
             "quick"          => "1",
             "interface"      => $block_ifs_csv,
             "direction"      => "in",
-            "ipprotocol"     => "inet",
+            "ipprotocol"     => "inet46",
             "source_net"     => $alias,
             "destination_net"=> "any",
             "disablereplyto" => "1",

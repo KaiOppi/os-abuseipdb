@@ -3,6 +3,25 @@
 All notable changes to this project are documented here.
 The format roughly follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project uses [Semantic Versioning](https://semver.org/).
 
+## [0.6.1] — 2026-05-16
+
+### Fixed
+- **Hotfix on top of v0.6.0 — the firewall layer itself was still IPv4-only.** v0.6.0 made the reporter, the perma-block validator, the hit-counter sampler and the blacklist downloader family-aware, but `setup.php` was still creating the three pf-table aliases with `<proto>IPv4</proto>` and the three block rules with `<ipprotocol>inet</ipprotocol>`. Net effect: IPv6 addresses produced by the reporter or accepted by `permaban_add` would have been written to a v4-only alias (rejected by OPNsense's alias validation) and even if they had made it into the table the block rule would not match v6 traffic. Without this hotfix v0.6.0 was effectively cosmetic for the firewall path.
+
+  Fix in `setup.php`:
+  - All three aliases (`abuseipdb_blacklist`, `abuseipdb_selfcare`, `abuseipdb_permaban`) are now created with `proto="IPv4,IPv6"` (the `proto` field is a Multiple=Y OptionField, this is the canonical OPNsense way of saying "dual-family"). Upgrade-path: pre-v0.6.x installs are detected by a `proto !== "IPv4,IPv6"` check and silently promoted on the next setup run.
+  - Both block-rule styles — Classic (`<filter><rule>`) and Automation (`OPNsense\Firewall\Filter`) — emit `ipprotocol="inet46"`. OPNsense expands that into two pf rules per directive (one `inet`, one `inet6`), verified with `pfctl -sr`.
+
+  Verified on dev VM:
+  ```
+  block drop in log quick on vtnet0 inet  from <abuseipdb_selfcare> to any
+  block drop in log quick on vtnet0 inet6 from <abuseipdb_selfcare> to any
+  ```
+  plus `pfctl -t abuseipdb_selfcare -T add 2001:db8::abcd` → "1/1 addresses added".
+
+### Notes
+- No schema change. The setup-script upgrade-path runs on every plugin save / configd-action, so existing installs pick it up automatically the next time they save the settings or hit a scheduled setup run.
+
 ## [0.6.0] — 2026-05-16
 
 ### Added
