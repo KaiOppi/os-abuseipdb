@@ -3,6 +3,11 @@
 All notable changes to this project are documented here.
 The format roughly follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project uses [Semantic Versioning](https://semver.org/).
 
+## [0.7.3] — 2026-05-16
+
+### Changed
+- **Perma-Block notes are now human-readable.** The auto-promote path wrote things like `3 selfcare hits, first=1778183106 last=1778898603` into the perma-block ledger — nobody reads epoch timestamps. The reporter's `maybe_promote()` and the manual `permaban_promote.py` action now format timestamps with `time.strftime("%Y-%m-%d %H:%M", localtime)`, producing notes like `3 selfcare hits between 2026-05-07 14:23 and 2026-05-15 18:30` and `3 selfcare hits within 14d, last 2026-05-15 18:30`. Future rows are clean; existing rows in the DB stay as-is (no in-place migration runs).
+
 ## [0.7.2] — 2026-05-16
 
 ### Fixed

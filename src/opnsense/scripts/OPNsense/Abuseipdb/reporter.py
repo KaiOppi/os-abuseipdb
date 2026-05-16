@@ -247,11 +247,13 @@ def maybe_promote(db, ip: str, ts: int, threshold: int, window_sec: int) -> bool
     # occurrences crossed threshold AND last_seen is recent (within window).
     if (ts - last_ts) > window_sec:
         return False
+    first_str = time.strftime("%Y-%m-%d %H:%M", time.localtime(first_ts))
+    last_str = time.strftime("%Y-%m-%d %H:%M", time.localtime(last_ts))
     db.execute(
         "INSERT OR REPLACE INTO permaban (ip, added_ts, source, note) "
         "VALUES (?, ?, ?, ?)",
         (ip, ts, "auto-promote",
-         f"{occ} selfcare hits, first={first_ts} last={last_ts}"),
+         f"{occ} selfcare hits between {first_str} and {last_str}"),
     )
     try:
         subprocess.run(

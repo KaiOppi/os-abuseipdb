@@ -60,11 +60,12 @@ def main() -> int:
 
     promoted = []
     for ip, occ, last_ts in rows:
+        last_str = time.strftime("%Y-%m-%d %H:%M", time.localtime(last_ts))
         db.execute(
             "INSERT OR REPLACE INTO permaban (ip, added_ts, source, note) "
             "VALUES (?, ?, ?, ?)",
             (ip, now, "auto-promote",
-             f"{occ} selfcare hits within {window_days}d (last={last_ts})"),
+             f"{occ} selfcare hits within {window_days}d, last {last_str}"),
         )
         pfctl_add(ip)
         promoted.append(ip)
