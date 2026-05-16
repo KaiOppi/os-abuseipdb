@@ -37,9 +37,15 @@ POSITION_FILE = os.path.join(STATE_DIR, "reporter.pos")
 # not an indicator of a fresh attack.
 OUR_RULE_MARKER = "[os-abuseipdb]"
 
-# Log line example after the RFC-5424 header:
-# "0,,,02f4bab031b57d1e30553ce08e0ec131,vtnet0,match,block,in,4,0x0,,255,20794,0,DF,17,udp,458,192.168.3.14,224.0.0.251,5353,5353,438"
-# We split on "] " after the [meta ...] marker, then comma-split.
+# Log line examples after the RFC-5424 header. The pf log uses different
+# column layouts for IPv4 and IPv6 — the field positions for proto/src/dst/ports
+# do not line up, so parse_line() switches on parts[8] (ip_version).
+#
+# IPv4 (rulenr=0 ... 4=ip_ver ... 15=proto_num,16=proto_name,17=len,18=src,19=dst,20=sport,21=dport):
+#   "0,,,<uuid>,vtnet0,match,block,in,4,0x0,,255,20794,0,DF,17,udp,458,192.168.3.14,224.0.0.251,5353,5353,438"
+#
+# IPv6 (rulenr=19 ... 6=ip_ver ... 12=proto_name,13=proto_num,14=len,15=src,16=dst,17=sport,18=dport):
+#   "19,,,<uuid>,pppoe0,match,block,in,6,0x00,0x86c31,113,tcp,6,20,2603:10a0:31c:81c1:0:1:8b:757a,2a11:fb80::1,443,49408,0,..."
 META_SPLIT = re.compile(r"\[meta [^\]]*\]\s+")
 
 
@@ -76,13 +82,14 @@ def check_abuseipdb(api_key: str, ip: str) -> tuple[int | None, str]:
 
 def parse_line(line: str):
     """Return (rule_label, action, src_ip, dst_port, proto, ifname) or None.
-    ifname is the physical interface name from the log (e.g. 'vtnet0', 'igb1')."""
+    ifname is the physical interface name from the log (e.g. 'vtnet0', 'igb1').
+    Handles both IPv4 and IPv6 block events (column layouts differ)."""
     m = META_SPLIT.search(line)
     if not m:
         return None
     payload = line[m.end():].strip()
     parts = payload.split(",")
-    if len(parts) < 20:
+    if len(parts) < 18:
         return None
     try:
         rule_label = parts[3]
@@ -91,11 +98,16 @@ def parse_line(line: str):
         if action != "block":
             return None
         ip_version = parts[8]
-        if ip_version != "4":
-            return None  # phase 5: IPv4 only
-        proto = parts[16]
-        src_ip = parts[18]
-        dst_port = parts[21] if len(parts) > 21 else ""
+        if ip_version == "4":
+            proto = parts[16]
+            src_ip = parts[18]
+            dst_port = parts[21] if len(parts) > 21 else ""
+        elif ip_version == "6":
+            proto = parts[12]
+            src_ip = parts[15]
+            dst_port = parts[18] if len(parts) > 18 else ""
+        else:
+            return None
         return rule_label, action, src_ip, dst_port, proto, ifname
     except (IndexError, ValueError):
         return None

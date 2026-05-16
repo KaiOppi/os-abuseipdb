@@ -3,6 +3,21 @@
 All notable changes to this project are documented here.
 The format roughly follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project uses [Semantic Versioning](https://semver.org/).
 
+## [0.6.0] — 2026-05-16
+
+### Added
+- **IPv6 support across the whole pipeline.** Until now the reporter dropped every IPv6 block event on the floor (the parser had an explicit `phase 5: IPv4 only` gate). With v0.6.0:
+  - **Reporter** — `parse_line()` switches on the `ip_version` field of the filter-log entry and uses the correct column offsets for either IPv4 (`proto=parts[16], src=parts[18], dport=parts[21]`) or IPv6 (`proto=parts[12], src=parts[15], dport=parts[18]`). The OPNsense pf logger writes a different column layout for the two families, so a single offset set would have garbled v6 entries. The shared `is_private()` helper was already family-agnostic via `ipaddress.ip_address()`.
+  - **Perma-Block** — the manual-add validator (`is_valid_ipv4`) became `is_valid_ip` and now accepts any canonical IPv4 or IPv6 address. Input is normalised through `ipaddress.ip_address()` so DB and pf agree on representation (`2001:0db8::1` → `2001:db8::1`). The PHP-side `ServiceController` validator dropped its `FILTER_FLAG_IPV4` flag and now accepts either family on the REST endpoints.
+  - **Perma-Block hit-counter sampler** — the IP regex that parses `pfctl -T show -vv` output was extended to match both IPv4 and IPv6 table entries, so reboot-safe hit accounting works for both families.
+  - **Blacklist downloader** — a new opt-in setting *Include IPv6 entries* on the Blacklist tab. The AbuseIPDB `/blacklist` endpoint defaults to IPv4-only (verified empirically 2026-05-16). When the checkbox is ticked the downloader issues a second explicit `ipVersion=6` call and merges both lists. Costs one extra blacklist quota slot per scheduled run. A v6 fetch failure (typically the daily 10-call blacklist limit) is soft: the v4 list is kept and the failure is logged. Default is off, so upgraded installs see no behavioural change.
+  - **UI polish** — IP cells in the Self-Defense, Perma-Block and Reports tables are now `white-space: nowrap`, so 39-character v6 addresses no longer wrap mid-address.
+
+### Notes
+- Schema bump `Abuseipdb.xml`: `0.1.3 → 0.1.4`. New `blacklist.include_ipv6` BooleanField (default `0`). No data migration needed — existing configs read with the safe default.
+- The pf tables (`abuseipdb_blacklist`, `abuseipdb_selfcare`, `abuseipdb_permaban`) are family-mixed by default in FreeBSD pf; no separate v4/v6 tables were introduced.
+- Verified on the dev VM (192.168.3.161, VMID 150) against live filter-log lines from a dual-stack PPPoE WAN and against the AbuseIPDB blacklist endpoint with `ipVersion=6`.
+
 ## [0.5.0] — 2026-05-07
 
 ### Added

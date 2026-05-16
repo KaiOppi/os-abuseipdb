@@ -136,7 +136,7 @@
                 } else {
                     rows.forEach(function(r) {
                         var $tr = $('<tr>');
-                        $tr.append($('<td>').append($('<tt>').text(r.ip)));
+                        $tr.append($('<td>').css('white-space', 'nowrap').append($('<tt>').text(r.ip)));
                         $tr.append($('<td>').text(fmtIface(r.iface)));
                         $tr.append($('<td>').text(fmtTs(r.added_ts)));
                         $tr.append($('<td>').text(fmtTs(r.expires_ts) + ' (' + fmtDuration(r.remaining_sec) + ')'));
@@ -165,7 +165,7 @@
                 } else {
                     rows.forEach(function(r) {
                         var $tr = $('<tr>');
-                        $tr.append($('<td>').append($('<tt>').text(r.ip)));
+                        $tr.append($('<td>').css('white-space', 'nowrap').append($('<tt>').text(r.ip)));
                         $tr.append($('<td>').text(fmtTs(r.added_ts)));
                         // Hits cell: bold total + tiny session-counter underneath
                         var hits = (r.hits || 0).toLocaleString();
@@ -209,7 +209,7 @@
                         // leave them visible as `&lt;` in some browsers.
                         var $tr = $('<tr>');
                         $tr.append($('<td>').text(fmtTs(r.ts)));
-                        $tr.append($('<td>').append($('<tt>').text(r.ip)));
+                        $tr.append($('<td>').css('white-space', 'nowrap').append($('<tt>').text(r.ip)));
                         $tr.append($('<td>').text(fmtIface(r.iface)));
                         $tr.append($('<td>').text(r.categories || ''));
                         $tr.append($('<td>').addClass(r.ok ? 'ok' : 'warn').text(r.ok ? 'OK' : 'failed'));

@@ -18,9 +18,12 @@ from _common import (PF_TABLE_PERMABAN, PF_TABLE_SELFCARE, get_db, log,
                      out_json)
 
 
-def is_valid_ipv4(s: str) -> bool:
+def is_valid_ip(s: str) -> bool:
+    """Accept any well-formed IPv4 or IPv6 address. The string form returned
+    by ipaddress.ip_address() is the canonical form pfctl + sqlite agree on."""
     try:
-        return isinstance(ipaddress.ip_address(s), ipaddress.IPv4Address)
+        ipaddress.ip_address(s)
+        return True
     except ValueError:
         return False
 
@@ -33,9 +36,12 @@ def main() -> int:
     source = sys.argv[2].strip() if len(sys.argv) > 2 else "manual"
     note = sys.argv[3].strip() if len(sys.argv) > 3 else ""
 
-    if not is_valid_ipv4(ip):
-        out_json({"status": "error", "message": f"invalid ipv4 address: {ip}"})
+    if not is_valid_ip(ip):
+        out_json({"status": "error", "message": f"invalid ip address: {ip}"})
         return 1
+    # Normalise to the canonical string form so pfctl and the DB agree on
+    # representation (e.g. "2001:0db8::1" → "2001:db8::1").
+    ip = str(ipaddress.ip_address(ip))
 
     db = get_db()
     now = int(time.time())

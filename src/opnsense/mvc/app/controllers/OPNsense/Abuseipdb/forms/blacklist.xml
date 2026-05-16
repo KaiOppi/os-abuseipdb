@@ -18,6 +18,12 @@
         <help>Upper limit on IPs pulled per run. Free-tier supports 10,000.</help>
     </field>
     <field>
+        <id>abuseipdb.blacklist.include_ipv6</id>
+        <label>Include IPv6 entries</label>
+        <type>checkbox</type>
+        <help>The AbuseIPDB /blacklist endpoint defaults to IPv4-only. Enable this to make a second explicit IPv6 call and merge both lists into the pf table. Costs one extra blacklist quota slot per scheduled run.</help>
+    </field>
+    <field>
         <id>abuseipdb.blacklist.block_interfaces</id>
         <label>Block on interface(s)</label>
         <type>text</type>

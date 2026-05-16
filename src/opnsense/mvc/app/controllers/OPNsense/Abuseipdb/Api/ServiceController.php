@@ -135,8 +135,8 @@ class ServiceController extends ApiMutableServiceControllerBase
         }
         $ip = trim((string)$this->request->getPost('ip', 'striptags', ''));
         $note = trim((string)$this->request->getPost('note', 'striptags', ''));
-        if ($ip === '' || !filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
-            return ['status' => 'failed', 'message' => 'invalid ipv4 address'];
+        if ($ip === '' || !filter_var($ip, FILTER_VALIDATE_IP)) {
+            return ['status' => 'failed', 'message' => 'invalid ip address'];
         }
         // Sanitise note: keep length bounded, strip control chars / commas
         // (they break configd's space-separated argv).
@@ -161,8 +161,8 @@ class ServiceController extends ApiMutableServiceControllerBase
             return ['status' => 'failed', 'message' => 'POST required'];
         }
         $ip = trim((string)$this->request->getPost('ip', 'striptags', ''));
-        if ($ip === '' || !filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
-            return ['status' => 'failed', 'message' => 'invalid ipv4 address'];
+        if ($ip === '' || !filter_var($ip, FILTER_VALIDATE_IP)) {
+            return ['status' => 'failed', 'message' => 'invalid ip address'];
         }
         $backend = new Backend();
         $output = trim($backend->configdpRun('abuseipdb permaban_remove', [$ip]));

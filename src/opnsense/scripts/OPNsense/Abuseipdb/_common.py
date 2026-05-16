@@ -30,6 +30,7 @@ DEFAULT_CONFIG = {
         "enabled": "0",
         "confidence_min": "90",
         "max_ips": "10000",
+        "include_ipv6": "0",
         "schedule": "0 3 * * *",
     },
     "reporter": {

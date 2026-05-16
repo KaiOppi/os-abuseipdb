@@ -23,9 +23,17 @@ import time
 from _common import PF_TABLE_PERMABAN, get_db, log
 
 
-# Match a leading-whitespace bare IP (table entry header) — IPv4 only for now.
+# Match a leading-whitespace bare IP (table entry header) — both IPv4 and IPv6.
 # pfctl prints them with 3-space indent, no other content on the line.
-_IP_LINE = re.compile(r"^\s+(\d{1,3}(?:\.\d{1,3}){3})\s*$")
+# The IPv6 alternative is intentionally loose; ipaddress.ip_address() in the
+# main loop rejects malformed strings before we use them as a DB key.
+_IP_LINE = re.compile(
+    r"^\s+("
+    r"\d{1,3}(?:\.\d{1,3}){3}"
+    r"|"
+    r"[0-9a-fA-F:]+:[0-9a-fA-F:]*"
+    r")\s*$"
+)
 _PACKETS = re.compile(r"Packets:\s+(\d+)")
 
 
