@@ -45,9 +45,24 @@ def main() -> int:
             "reports_today": {},
             "reports_total": {},
         },
+        # v0.8: IPv6-only subset of the same counters, so the UI can render
+        # stacked bars (v4 + v6). totals stay in by_iface; v4 share is
+        # implicit (by_iface[k] - by_iface_v6[k]).
+        "by_iface_v6": {
+            "selfcare_active": {},
+            "selfcare_total": {},
+            "reports_today": {},
+            "reports_total": {},
+        },
         "daily": {                  # last 14 days, oldest → newest
             "reports": [],
             "selfcare_added": [],
+        },
+        # v0.8: per-endpoint API quota from the most recent header we saw
+        "quota": {                  # endpoint → {remaining, limit, reset_ts, last_seen}
+            "report":    {"remaining": None, "limit": None, "reset_ts": None, "last_seen": None},
+            "check":     {"remaining": None, "limit": None, "reset_ts": None, "last_seen": None},
+            "blacklist": {"remaining": None, "limit": None, "reset_ts": None, "last_seen": None},
         },
     }
     data["iface_descr"] = get_iface_descr_map()
@@ -61,6 +76,21 @@ def main() -> int:
             data["last_run"] = row[0]
             data["last_run_ok"] = bool(row[1])
             data["quota_remaining"] = row[2]
+
+        # v0.8: latest header per endpoint
+        for endpoint in ("report", "check", "blacklist"):
+            q = db.execute(
+                "SELECT ts, remaining, rate_limit, reset_ts FROM api_quota_log "
+                "WHERE endpoint = ? ORDER BY ts DESC LIMIT 1",
+                (endpoint,),
+            ).fetchone()
+            if q:
+                data["quota"][endpoint] = {
+                    "last_seen": q[0],
+                    "remaining": q[1],
+                    "limit": q[2],
+                    "reset_ts": q[3],
+                }
 
         midnight = int(time.mktime(time.strptime(time.strftime("%Y-%m-%d 00:00:00"), "%Y-%m-%d %H:%M:%S")))
         row = db.execute(
@@ -82,37 +112,69 @@ def main() -> int:
         row = db.execute("SELECT COUNT(*) FROM permaban").fetchone()
         data["permaban_count"] = row[0] if row else 0
 
+        # v0.8: snapshot history (last N entries, newest first). Empty when
+        # the user runs replace or persist-days mode, populated under
+        # union/intersection. The UI only renders this section when there
+        # is at least one entry, so we don't have to know the mode here.
+        snaps = db.execute(
+            "SELECT snapshot_id, fetched_ts, ip_count, quota_remaining "
+            "FROM blacklist_snapshot_meta "
+            "ORDER BY snapshot_id DESC LIMIT 30"
+        ).fetchall()
+        data["snapshots"] = [
+            {"id": r[0], "fetched_ts": r[1], "ip_count": r[2], "quota_remaining": r[3]}
+            for r in snaps
+        ]
+
         # Per-interface aggregations. iface column may hold a comma-separated
         # list (one IP can hit multiple interfaces in load-balance setups), so
         # we explode it in Python — SQLite has no direct split-aggregate.
-        sca_active = Counter()
+        # v0.8: also count the v6-only subset separately so the UI can render
+        # stacked v4+v6 bars. v6 detection by ':' in the ip column.
+        sca_active   = Counter(); sca_active_v6   = Counter()
         for r in db.execute(
-            "SELECT iface FROM selfcare_entries WHERE removed_ts IS NULL AND expires_ts > ?",
+            "SELECT iface, ip FROM selfcare_entries WHERE removed_ts IS NULL AND expires_ts > ?",
             (now,),
         ):
+            is_v6 = r[1] and ":" in r[1]
             for i in _split_ifaces(r[0]):
                 sca_active[i] += 1
-        data["by_iface"]["selfcare_active"] = dict(sca_active)
+                if is_v6:
+                    sca_active_v6[i] += 1
+        data["by_iface"]["selfcare_active"]    = dict(sca_active)
+        data["by_iface_v6"]["selfcare_active"] = dict(sca_active_v6)
 
-        sca_total = Counter()
-        for r in db.execute("SELECT iface FROM selfcare_entries"):
+        sca_total = Counter(); sca_total_v6 = Counter()
+        for r in db.execute("SELECT iface, ip FROM selfcare_entries"):
+            is_v6 = r[1] and ":" in r[1]
             for i in _split_ifaces(r[0]):
                 sca_total[i] += 1
-        data["by_iface"]["selfcare_total"] = dict(sca_total)
+                if is_v6:
+                    sca_total_v6[i] += 1
+        data["by_iface"]["selfcare_total"]    = dict(sca_total)
+        data["by_iface_v6"]["selfcare_total"] = dict(sca_total_v6)
 
-        rep_today = Counter()
+        rep_today = Counter(); rep_today_v6 = Counter()
         for r in db.execute(
-            "SELECT iface FROM reports WHERE ts >= ? AND ok = 1", (midnight,)
+            "SELECT iface, ip FROM reports WHERE ts >= ? AND ok = 1", (midnight,)
         ):
+            is_v6 = r[1] and ":" in r[1]
             for i in _split_ifaces(r[0]):
                 rep_today[i] += 1
-        data["by_iface"]["reports_today"] = dict(rep_today)
+                if is_v6:
+                    rep_today_v6[i] += 1
+        data["by_iface"]["reports_today"]    = dict(rep_today)
+        data["by_iface_v6"]["reports_today"] = dict(rep_today_v6)
 
-        rep_total = Counter()
-        for r in db.execute("SELECT iface FROM reports WHERE ok = 1"):
+        rep_total = Counter(); rep_total_v6 = Counter()
+        for r in db.execute("SELECT iface, ip FROM reports WHERE ok = 1"):
+            is_v6 = r[1] and ":" in r[1]
             for i in _split_ifaces(r[0]):
                 rep_total[i] += 1
-        data["by_iface"]["reports_total"] = dict(rep_total)
+                if is_v6:
+                    rep_total_v6[i] += 1
+        data["by_iface"]["reports_total"]    = dict(rep_total)
+        data["by_iface_v6"]["reports_total"] = dict(rep_total_v6)
 
         # 14-day timeseries — bucket reports/selfcare adds by local day.
         # Pre-fill all 14 days with zero so the chart has a consistent x-axis.
@@ -127,24 +189,36 @@ def main() -> int:
             bucket_selfcare[day_label] = 0
 
         oldest = days[0][0]
+        # v0.8: track the v6 share separately so the daily-chart bars in the
+        # UI can render stacked v4+v6 segments like the per-interface bars.
+        bucket_reports_v6 = {lbl: 0 for _, lbl in days}
+        bucket_selfcare_v6 = {lbl: 0 for _, lbl in days}
         for r in db.execute(
-            "SELECT ts FROM reports WHERE ts >= ? AND ok = 1", (oldest,)
+            "SELECT ts, ip FROM reports WHERE ts >= ? AND ok = 1", (oldest,)
         ):
             day_label = time.strftime("%Y-%m-%d", time.localtime(r[0]))
             if day_label in bucket_reports:
                 bucket_reports[day_label] += 1
+                if r[1] and ":" in r[1]:
+                    bucket_reports_v6[day_label] += 1
         for r in db.execute(
-            "SELECT added_ts FROM selfcare_entries WHERE added_ts >= ?", (oldest,)
+            "SELECT added_ts, ip FROM selfcare_entries WHERE added_ts >= ?", (oldest,)
         ):
             day_label = time.strftime("%Y-%m-%d", time.localtime(r[0]))
             if day_label in bucket_selfcare:
                 bucket_selfcare[day_label] += 1
+                if r[1] and ":" in r[1]:
+                    bucket_selfcare_v6[day_label] += 1
 
         data["daily"]["reports"] = [
-            {"day": lbl, "count": bucket_reports[lbl]} for _, lbl in days
+            {"day": lbl, "count": bucket_reports[lbl],
+             "count_v6": bucket_reports_v6[lbl]}
+            for _, lbl in days
         ]
         data["daily"]["selfcare_added"] = [
-            {"day": lbl, "count": bucket_selfcare[lbl]} for _, lbl in days
+            {"day": lbl, "count": bucket_selfcare[lbl],
+             "count_v6": bucket_selfcare_v6[lbl]}
+            for _, lbl in days
         ]
 
         db.close()

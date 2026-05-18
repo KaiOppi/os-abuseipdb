@@ -3,6 +3,35 @@
 All notable changes to this project are documented here.
 The format roughly follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project uses [Semantic Versioning](https://semver.org/).
 
+## [0.8.0] — 2026-05-18
+
+### Added
+- **API-quota tracking per endpoint.** Until now the *AbuseIPDB Status* panel only showed `X-RateLimit-Remaining` from the most recent `/blacklist` call — refreshed at most once a day by the 03:13 download cron. v0.8 captures the header on **every** API call (`/check`, `/report`, `/blacklist`) and persists it in a new SQLite table `api_quota_log`. The status panel now renders three independent rows, each with its current remaining count, daily limit, when the header was last seen, and how long until reset. Useful when one account is shared across multiple OPNsense boxes: each box's UI now shows what its own traffic has cost in real time.
+
+- **Blacklist snapshot rotation (union / intersection mode).** Two new modes for the daily download, controlled by three new settings on the *Blacklist* tab:
+  - `history_mode = off` (default, replaces the table each day — original behaviour)
+  - `history_mode = union, history_size = N` — keep every IP we've seen across the last N runs, regenerate the alias as `SELECT DISTINCT ip`. Sliding-window variant of the v0.7 `persist_days` mode.
+  - `history_mode = intersection, history_size = N, history_threshold = M` — only keep IPs that appear in at least M of the last N runs. Filters out drive-by hits, leaves the constant repeat-offenders. Typical setup `N=7, M=4` yields ~3-5k IPs from a 10k daily download.
+
+  Storage: two new tables `blacklist_snapshots` and `blacklist_snapshot_meta`. DB cost is bounded by `N × max_ips`; e.g. `N=7 × 10k = 70k` rows ≈ 6 MB with index. Pf table is regenerated from a `GROUP BY ip HAVING COUNT(*) >= M` query — sub-100ms even at 30 snapshots.
+
+- **Snapshot history view.** New foldable section at the bottom of the *AbuseIPDB Status* panel, automatically shown when at least one snapshot exists. Lists snapshot ID, fetched-at timestamp, IP count, and the quota header that came back with that fetch — last 30 snapshots, newest first.
+
+- **Stacked v4 / v6 bars in the Statistics tab.** Per-interface and 14-day charts now render a second purple segment showing the IPv6 share alongside the blue (or green for the daily series) IPv4 portion. Tooltips on each segment give the exact count. Backed by a new `by_iface_v6` map and `count_v6` per daily entry in the stats payload.
+
+- **Configurable row limit on the Self-Defense list.** Dropdown (50 / 100 / 200 / 300 / 500) on the *Self-Defense* tab, default 300. Picks how many entries the GUI requests from the `selfcare_list` endpoint and renders. The header now shows *Shown X of Total* so it's obvious when the active set exceeds the limit. Up until 0.7.3 the GUI was hard-wired to 200 — meaning installations with more than 200 active entries (which v6 made considerably more common) had older rows silently hidden.
+
+### Fixed
+- **SQLite-Lock-Race in record_quota.** The new `record_quota()` helper opened its own short-lived writer connection per API call. While the reporter loop had its own long-lived connection open, the second writer hit `database is locked` and the surrounding pre-check failed with `SKIP: precheck failed (check failed: database is locked)`. Three layers of fix:
+  - `get_db()` now sets `PRAGMA journal_mode=WAL` + `PRAGMA busy_timeout=5000` — readers and writers no longer block each other.
+  - `record_quota()` is wrapped in defensive try/except so a transient DB error never kills the surrounding `/report` or `/check` flow.
+  - `check_abuseipdb(...)` and `submit_report(...)` accept the caller's open DB connection as `db=...` kwarg and pass it through to `record_quota`, so the reporter's hot path no longer opens a second connection at all.
+
+### Notes
+- Schema bump `Abuseipdb.xml`: `0.1.5 → 0.1.6`. Three new fields under `<blacklist>` (`history_mode`, `history_size`, `history_threshold`). No data migration needed.
+- The new SQLite tables (`api_quota_log`, `blacklist_snapshots`, `blacklist_snapshot_meta`) are created lazily on first `get_db()` call; existing installs pick them up on the next reporter or download cron without any operator action.
+- Live-tested for ~24 hours on a production OPNsense (Home) before release. Reporter logged ~100 reports/day, quota rows arrived as expected, no further lock errors after the WAL fix, no configd or webgui regression.
+
 ## [0.7.3] — 2026-05-16
 
 ### Changed

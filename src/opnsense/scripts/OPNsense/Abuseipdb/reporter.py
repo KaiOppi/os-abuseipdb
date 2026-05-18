@@ -24,7 +24,7 @@ from collections import defaultdict
 from _common import (API_BASE, PF_TABLE_PERMABAN, PF_TABLE_SELFCARE,
                      STATE_DIR, die, ensure_state_dir, get_config, get_db,
                      get_iface_map, get_local_networks,
-                     get_wan_iface_phys_names, log)
+                     get_wan_iface_phys_names, log, record_quota)
 
 try:
     import requests
@@ -62,8 +62,10 @@ def is_private(ip_str: str) -> bool:
         return True
 
 
-def check_abuseipdb(api_key: str, ip: str) -> tuple[int | None, str]:
-    """Ask AbuseIPDB what it knows about an IP. Returns (confidence, comment)."""
+def check_abuseipdb(api_key: str, ip: str, db=None) -> tuple[int | None, str]:
+    """Ask AbuseIPDB what it knows about an IP. Returns (confidence, comment).
+    `db` is the caller's open connection — passing it through avoids a second
+    short-lived writer fighting for the same DB file (SQLite locks)."""
     try:
         r = requests.get(
             f"{API_BASE}/check",
@@ -71,6 +73,7 @@ def check_abuseipdb(api_key: str, ip: str) -> tuple[int | None, str]:
             params={"ipAddress": ip, "maxAgeInDays": 90},
             timeout=10,
         )
+        record_quota(db, "check", r)
         if r.status_code != 200:
             return None, f"check http {r.status_code}"
         data = r.json().get("data", {})
@@ -296,7 +299,7 @@ def selfcare_add(db, ip: str, ts: int, ttl_sec: int, categories: str, source: st
     return True
 
 
-def submit_report(api_key: str, ip: str, categories: str, comment: str) -> tuple[bool, str, int | None]:
+def submit_report(api_key: str, ip: str, categories: str, comment: str, db=None) -> tuple[bool, str, int | None]:
     try:
         r = requests.post(
             f"{API_BASE}/report",
@@ -304,6 +307,7 @@ def submit_report(api_key: str, ip: str, categories: str, comment: str) -> tuple
             data={"ip": ip, "categories": categories, "comment": comment[:1000]},
             timeout=10,
         )
+        record_quota(db, "report", r)
     except Exception as exc:
         return False, f"request failed: {exc}", None
     quota = r.headers.get("X-RateLimit-Remaining")
@@ -428,7 +432,7 @@ def main() -> int:
         # that confirmed-bad IPs can still feed the local self-defense table.
         precheck_passed = False
         if precheck:
-            conf, check_msg = check_abuseipdb(api_key, ip)
+            conf, check_msg = check_abuseipdb(api_key, ip, db=db)
             if conf is None:
                 db.execute(
                     "INSERT OR REPLACE INTO reports (ts, ip, categories, ok, message, iface) VALUES (?, ?, ?, ?, ?, ?)",
@@ -484,7 +488,7 @@ def main() -> int:
             log(f"dry-run: would report {ip} ({info['count']} hits) via {ifaces_csv}")
             continue
 
-        ok, msg, quota = submit_report(api_key, ip, default_categories, comment)
+        ok, msg, quota = submit_report(api_key, ip, default_categories, comment, db=db)
         db.execute(
             "INSERT OR REPLACE INTO reports (ts, ip, categories, ok, message, iface) VALUES (?, ?, ?, ?, ?, ?)",
             (ts, ip, default_categories, 1 if ok else 0, msg[:200], ifaces_csv),

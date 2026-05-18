@@ -25,6 +25,19 @@
         return d.toLocaleString();
     }
 
+    function fmtAgo(ts) {
+        if (!ts) return '';
+        var diff = Math.round(ts - Date.now()/1000);
+        var sign = diff < 0 ? -1 : 1;
+        var abs = Math.abs(diff);
+        var unit, val;
+        if (abs < 60)         { unit='s';  val=abs; }
+        else if (abs < 3600)  { unit='m';  val=Math.round(abs/60); }
+        else if (abs < 86400) { unit='h';  val=Math.round(abs/3600); }
+        else                  { unit='d';  val=Math.round(abs/86400); }
+        return sign < 0 ? (val + unit + ' ago') : ('in ' + val + unit);
+    }
+
     function refreshStats() {
         ajaxCall(
             url = "/api/abuseipdb/service/stats",
@@ -39,7 +52,38 @@
                 $("#stat_last_ok").text(d.last_run_ok === null ? '—' : (d.last_run_ok ? 'OK' : 'failed'))
                                    .toggleClass('ok', d.last_run_ok === true)
                                    .toggleClass('warn', d.last_run_ok === false);
-                $("#stat_quota").text(d.quota_remaining === null ? '—' : d.quota_remaining);
+                // v0.8: per-endpoint quota with last-seen freshness
+                ['report','check','blacklist'].forEach(function(ep){
+                    var q = (d.quota || {})[ep] || {};
+                    var txt = (q.remaining === null || q.remaining === undefined)
+                        ? '—'
+                        : (q.remaining + (q.limit ? ' / ' + q.limit : ''));
+                    $("#stat_q_" + ep).text(txt);
+                    var age = q.last_seen ? fmtAgo(q.last_seen) : '';
+                    var reset = q.reset_ts ? fmtAgo(q.reset_ts) + ' (reset)' : '';
+                    $("#stat_q_" + ep + "_age").text(
+                        [age && 'as of ' + age, reset].filter(Boolean).join(' · ')
+                    );
+                });
+                // v0.8: snapshot history (only shown when at least one exists)
+                var snaps = d.snapshots || [];
+                if (snaps.length > 0) {
+                    $("#stat_snapshots_wrap").show();
+                    $("#stat_snapshots_count").text(snaps.length);
+                    var $body = $("#stat_snapshots_body").empty();
+                    snaps.forEach(function(s) {
+                        var $tr = $('<tr>');
+                        var $td1 = $('<td>').css('padding','2px 10px').append($('<tt>').text('#' + s.id));
+                        var $td2 = $('<td>').css({'padding':'2px 10px','white-space':'nowrap'}).text(fmtTs(s.fetched_ts));
+                        var $td3 = $('<td>').css({'padding':'2px 10px','text-align':'right'}).text((s.ip_count || 0).toLocaleString());
+                        var $td4 = $('<td>').css({'padding':'2px 10px','text-align':'right','color':'#888'})
+                            .text(s.quota_remaining === null || s.quota_remaining === undefined ? '—' : s.quota_remaining);
+                        $tr.append($td1, $td2, $td3, $td4);
+                        $body.append($tr);
+                    });
+                } else {
+                    $("#stat_snapshots_wrap").hide();
+                }
                 $("#stat_reports_today").text(d.reports_today);
                 $("#stat_reports_total").text(d.reports_total);
                 $("#stat_selfcare_active").text((d.selfcare_active || 0).toLocaleString());
@@ -50,22 +94,46 @@
         );
     }
 
-    function renderIfaceTable(targetSel, dict) {
+    function renderIfaceTable(targetSel, dict, v6dict) {
         var $t = $(targetSel).empty();
         var keys = Object.keys(dict || {}).sort(function(a,b){ return (dict[b]||0) - (dict[a]||0); });
         if (keys.length === 0) {
             $t.append('<tr><td colspan="2" style="color:#888;padding:6px">—</td></tr>');
             return;
         }
+        v6dict = v6dict || {};
         var max = Math.max.apply(null, keys.map(function(k){ return dict[k]; }));
         keys.forEach(function(k) {
-            var pct = max > 0 ? Math.round(dict[k] / max * 100) : 0;
+            var total = dict[k] || 0;
+            var v6    = v6dict[k] || 0;
+            var v4    = Math.max(total - v6, 0);
+            // Bar widths are relative to the largest interface count, so the
+            // longest row hits ~100% and the rest scale below.
+            var totalPct = max > 0 ? Math.round(total / max * 100) : 0;
+            var v6Share  = total > 0 ? (v6 / total) : 0;
+            var v6PctOfBar = Math.round(v6Share * 100);   // share inside the bar itself
+            var v4PctOfBar = 100 - v6PctOfBar;
             var label = ifaceDescr[k] || k;
+            var label4 = v4 > 0 ? v4.toLocaleString() : '';
+            var label6 = v6 > 0 ? v6.toLocaleString() : '';
+            var inner = '';
+            // v4 segment (blue) — always render when v4 > 0
+            if (v4 > 0) {
+                inner += '<div title="IPv4: ' + v4 + '" style="background:#3498db;color:#fff;padding:2px 6px;'
+                       + 'width:' + v4PctOfBar + '%;font-size:11px;text-align:left;'
+                       + 'box-sizing:border-box;overflow:hidden">' + label4 + '</div>';
+            }
+            // v6 segment (purple) — always render when v6 > 0
+            if (v6 > 0) {
+                inner += '<div title="IPv6: ' + v6 + '" style="background:#8e44ad;color:#fff;padding:2px 6px;'
+                       + 'width:' + Math.max(v6PctOfBar, 4) + '%;font-size:11px;text-align:left;'
+                       + 'box-sizing:border-box;overflow:hidden">' + label6 + '</div>';
+            }
             $t.append(
                 '<tr>' +
                 '<td style="white-space:nowrap;padding-right:8px"><b>' + label + '</b> <span style="color:#888;font-size:11px">' + k + '</span></td>' +
                 '<td style="width:100%">' +
-                '<div style="background:#3498db;color:#fff;padding:2px 6px;width:' + Math.max(pct, 5) + '%;min-width:30px;font-size:11px">' + dict[k].toLocaleString() + '</div>' +
+                '<div style="display:flex;width:' + Math.max(totalPct, 5) + '%;min-width:30px">' + inner + '</div>' +
                 '</td></tr>'
             );
         });
@@ -79,24 +147,47 @@
         }
         var max = Math.max.apply(null, series.map(function(p){ return p.count; }));
         series.forEach(function(p) {
-            var pct = max > 0 ? Math.round(p.count / max * 100) : 0;
+            var total = p.count || 0;
+            var v6    = p.count_v6 || 0;
+            var v4    = Math.max(total - v6, 0);
+            var totalPct = max > 0 ? Math.round(total / max * 100) : 0;
+            var v6PctOfBar = total > 0 ? Math.round(v6 / total * 100) : 0;
+            var v4PctOfBar = 100 - v6PctOfBar;
             var d = new Date(p.day);
             var dayLbl = d.toLocaleDateString(undefined, {weekday:'short', day:'2-digit', month:'2-digit'});
+            var label4 = v4 > 0 ? v4.toLocaleString() : '';
+            var label6 = v6 > 0 ? v6.toLocaleString() : '';
+            var inner = '';
+            if (v4 > 0) {
+                inner += '<div title="IPv4: ' + v4 + '" style="background:#27ae60;color:#fff;padding:2px 6px;'
+                       + 'width:' + v4PctOfBar + '%;font-size:11px;text-align:left;'
+                       + 'box-sizing:border-box;overflow:hidden">' + label4 + '</div>';
+            }
+            if (v6 > 0) {
+                inner += '<div title="IPv6: ' + v6 + '" style="background:#8e44ad;color:#fff;padding:2px 6px;'
+                       + 'width:' + Math.max(v6PctOfBar, 4) + '%;font-size:11px;text-align:left;'
+                       + 'box-sizing:border-box;overflow:hidden">' + label6 + '</div>';
+            }
+            if (!inner) {
+                // total == 0 — render an empty thin sliver so the row stays visible
+                inner = '<div style="background:#e0e0e0;width:100%;padding:2px 6px;font-size:11px;color:#888">0</div>';
+            }
             $t.append(
                 '<tr>' +
                 '<td style="white-space:nowrap;padding-right:8px;font-size:11px">' + dayLbl + '</td>' +
                 '<td style="width:100%">' +
-                '<div style="background:#27ae60;color:#fff;padding:2px 6px;width:' + Math.max(pct, 1) + '%;min-width:30px;font-size:11px">' + p.count.toLocaleString() + '</div>' +
+                '<div style="display:flex;width:' + Math.max(totalPct, 1) + '%;min-width:30px">' + inner + '</div>' +
                 '</td></tr>'
             );
         });
     }
 
     function renderStatsTab(d) {
-        renderIfaceTable("#stats_iface_sc_active tbody", d.by_iface ? d.by_iface.selfcare_active : {});
-        renderIfaceTable("#stats_iface_sc_total tbody",  d.by_iface ? d.by_iface.selfcare_total  : {});
-        renderIfaceTable("#stats_iface_rep_today tbody", d.by_iface ? d.by_iface.reports_today   : {});
-        renderIfaceTable("#stats_iface_rep_total tbody", d.by_iface ? d.by_iface.reports_total   : {});
+        var v6 = d.by_iface_v6 || {};
+        renderIfaceTable("#stats_iface_sc_active tbody", d.by_iface ? d.by_iface.selfcare_active : {}, v6.selfcare_active);
+        renderIfaceTable("#stats_iface_sc_total tbody",  d.by_iface ? d.by_iface.selfcare_total  : {}, v6.selfcare_total);
+        renderIfaceTable("#stats_iface_rep_today tbody", d.by_iface ? d.by_iface.reports_today   : {}, v6.reports_today);
+        renderIfaceTable("#stats_iface_rep_total tbody", d.by_iface ? d.by_iface.reports_total   : {}, v6.reports_total);
         renderDailyChart("#stats_daily_reports tbody",   d.daily ? d.daily.reports         : []);
         renderDailyChart("#stats_daily_selfcare tbody",  d.daily ? d.daily.selfcare_added  : []);
     }
@@ -122,14 +213,16 @@
     }
 
     function refreshSelfcare() {
+        var limit = parseInt($("#selfcareLimit").val() || "300", 10);
         ajaxCall(
             url = "/api/abuseipdb/service/selfcare_list",
-            sendData = {limit: 200},
+            sendData = {limit: limit},
             callback = function(resp) {
                 if (!resp || resp.status !== 'ok') return;
                 var rows = resp.data.rows;
                 var total = resp.data.total_active;
                 $("#selfcareTotal").text(total);
+                $("#selfcareShown").text(rows.length);
                 var tbody = $("#selfcareTable tbody").empty();
                 if (rows.length === 0) {
                     tbody.append('<tr><td colspan="6" style="text-align:center;color:#888;padding:12px">{{ lang._("No active entries.") }}</td></tr>');
@@ -300,6 +393,7 @@
         });
         $("#refreshReportsAct").click(refreshReports);
         $("#refreshSelfcareAct").click(refreshSelfcare);
+        $("#selfcareLimit").change(refreshSelfcare);
         $("#refreshPermabanAct").click(refreshPermaban);
 
         // "→ Permaban" button on each row of the self-defense list.
@@ -394,8 +488,26 @@
             <td><span id="stat_bl_last">—</span> (<span id="stat_last_ok">—</span>)</td>
         </tr>
         <tr>
-            <td class="lbl">{{ lang._('API quota remaining') }}</td>
-            <td><span id="stat_quota">—</span></td>
+            <td class="lbl">{{ lang._('API quota') }}</td>
+            <td>
+                <table style="width:auto;font-size:11px;border-collapse:collapse">
+                    <tr>
+                        <td style="padding-right:10px;color:#555">/report</td>
+                        <td><span id="stat_q_report">—</span></td>
+                        <td style="padding-left:10px;color:#888" id="stat_q_report_age"></td>
+                    </tr>
+                    <tr>
+                        <td style="padding-right:10px;color:#555">/check</td>
+                        <td><span id="stat_q_check">—</span></td>
+                        <td style="padding-left:10px;color:#888" id="stat_q_check_age"></td>
+                    </tr>
+                    <tr>
+                        <td style="padding-right:10px;color:#555">/blacklist</td>
+                        <td><span id="stat_q_blacklist">—</span></td>
+                        <td style="padding-left:10px;color:#888" id="stat_q_blacklist_age"></td>
+                    </tr>
+                </table>
+            </td>
         </tr>
         <tr>
             <td class="lbl">{{ lang._('Reports today / total') }}</td>
@@ -410,6 +522,25 @@
             <td><span id="stat_permaban_count">—</span></td>
         </tr>
     </table>
+    <div id="stat_snapshots_wrap" style="margin-top:10px; display:none">
+        <details>
+            <summary style="cursor:pointer; font-size:12px; color:#555">
+                {{ lang._('Blacklist snapshot history') }}
+                (<span id="stat_snapshots_count">0</span>)
+            </summary>
+            <table style="width:auto; font-size:11px; margin-top:6px; border-collapse:collapse">
+                <thead>
+                    <tr style="background:#e7eef4">
+                        <th style="padding:3px 10px; text-align:left">ID</th>
+                        <th style="padding:3px 10px; text-align:left">{{ lang._('Fetched') }}</th>
+                        <th style="padding:3px 10px; text-align:right">{{ lang._('IPs') }}</th>
+                        <th style="padding:3px 10px; text-align:right">{{ lang._('Quota at fetch') }}</th>
+                    </tr>
+                </thead>
+                <tbody id="stat_snapshots_body"></tbody>
+            </table>
+        </details>
+    </div>
     <div style="margin-top:8px">
         <b>{{ lang._('Jump to:') }}</b>
         <a href="/ui/firewall/alias#abuseipdb_blacklist" class="btn btn-default btn-xs">
@@ -458,7 +589,17 @@
         <div style="padding:10px 15px 15px 15px">
             <h4 style="margin-top:18px">
                 {{ lang._('Currently blocked') }}
-                (<span id="selfcareTotal">0</span>)
+                (<span id="selfcareShown">0</span> {{ lang._('of') }} <span id="selfcareTotal">0</span>)
+                <label style="margin-left:14px;font-weight:normal;font-size:12px">
+                    {{ lang._('Show:') }}
+                    <select id="selfcareLimit" class="selectpicker" style="font-size:12px">
+                        <option value="50">50</option>
+                        <option value="100">100</option>
+                        <option value="200">200</option>
+                        <option value="300" selected>300</option>
+                        <option value="500">500</option>
+                    </select>
+                </label>
                 <button class="btn btn-default btn-xs" id="refreshSelfcareAct" style="margin-left:10px">
                     <span class="fa fa-refresh"></span> {{ lang._('Refresh') }}
                 </button>

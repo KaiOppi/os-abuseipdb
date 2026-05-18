@@ -32,6 +32,9 @@ DEFAULT_CONFIG = {
         "max_ips": "10000",
         "include_ipv6": "0",
         "persist_days": "0",
+        "history_mode": "off",
+        "history_size": "7",
+        "history_threshold": "4",
         "schedule": "0 3 * * *",
     },
     "reporter": {
@@ -68,7 +71,18 @@ def _column_exists(db, table: str, col: str) -> bool:
 
 def get_db() -> sqlite3.Connection:
     ensure_state_dir()
-    db = sqlite3.connect(STATE_DB)
+    db = sqlite3.connect(STATE_DB, timeout=10)
+    # WAL gives us readers-don't-block-writers semantics, which matters
+    # because the reporter keeps a long-lived connection open during a
+    # cycle while record_quota() opens its own short-lived writer per
+    # API call. busy_timeout adds a graceful retry window for whichever
+    # transaction lands second. Both PRAGMAs are persistent on the DB
+    # file, but setting them on every connect is harmless.
+    try:
+        db.execute("PRAGMA journal_mode=WAL")
+        db.execute("PRAGMA busy_timeout=5000")
+    except sqlite3.OperationalError:
+        pass
     db.execute("""
         CREATE TABLE IF NOT EXISTS blacklist_runs (
             ts INTEGER PRIMARY KEY,
@@ -132,6 +146,42 @@ def get_db() -> sqlite3.Connection:
             last_seen_ts INTEGER NOT NULL
         )
     """)
+    # v0.8.0: snapshot-rotation blacklist. Each successful download becomes
+    # its own immutable snapshot. The active pf-alias is computed from a
+    # GROUP BY ... HAVING COUNT(*) >= threshold over the N most recent
+    # snapshots. Lets the operator trade alias size for reputation quality
+    # (intersection of last 7 days = ~1-2k constant offenders).
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS blacklist_snapshots (
+            snapshot_id INTEGER NOT NULL,
+            ip TEXT NOT NULL,
+            PRIMARY KEY (snapshot_id, ip)
+        )
+    """)
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS blacklist_snapshot_meta (
+            snapshot_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            fetched_ts INTEGER NOT NULL,
+            ip_count INTEGER NOT NULL,
+            quota_remaining INTEGER
+        )
+    """)
+    db.execute("CREATE INDEX IF NOT EXISTS idx_snap_ip ON blacklist_snapshots (ip)")
+    # v0.8.0: per-endpoint API quota history. Headers X-RateLimit-Remaining
+    # and -Reset come back on every /report, /check, /blacklist call. We
+    # log them all so the UI can show real-time-ish usage instead of
+    # whatever the daily blacklist download last saw.
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS api_quota_log (
+            ts INTEGER NOT NULL,
+            endpoint TEXT NOT NULL,
+            remaining INTEGER,
+            rate_limit INTEGER,
+            reset_ts INTEGER,
+            PRIMARY KEY (ts, endpoint)
+        )
+    """)
+    db.execute("CREATE INDEX IF NOT EXISTS idx_quota_endpoint_ts ON api_quota_log (endpoint, ts DESC)")
     # Schema migrations — additive only, never destructive.
     if not _column_exists(db, "reports", "iface"):
         db.execute("ALTER TABLE reports ADD COLUMN iface TEXT")
@@ -332,3 +382,62 @@ def die(msg: str, code: int = 1) -> None:
 def out_json(data: dict) -> None:
     sys.stdout.write(json.dumps(data))
     sys.stdout.flush()
+
+
+def record_quota(db, endpoint: str, response) -> None:
+    # `db` may be None — record_quota then opens (and closes) its own
+    # SQLite connection so module-level helpers like check_abuseipdb()
+    # don't have to thread the handle through their call chain.
+    """Persist X-RateLimit-* headers from a requests.Response so the UI
+    can show fresh per-endpoint quota instead of the once-a-day blacklist
+    snapshot. Silent on missing headers — AbuseIPDB sets them on every
+    /report, /check, /blacklist response but a non-200 error path may
+    skip them. Endpoint should be one of 'report', 'check', 'blacklist'."""
+    import time as _time
+    try:
+        h = response.headers
+    except AttributeError:
+        return
+    rem = h.get("X-RateLimit-Remaining")
+    lim = h.get("X-RateLimit-Limit")
+    rst = h.get("X-RateLimit-Reset")
+    if rem is None and lim is None:
+        return
+    def _i(v):
+        try:
+            return int(v) if v is not None else None
+        except (TypeError, ValueError):
+            return None
+    own_db = False
+    if db is None:
+        try:
+            db = get_db()
+            own_db = True
+        except Exception:
+            return
+    try:
+        try:
+            db.execute(
+                "INSERT OR REPLACE INTO api_quota_log "
+                "(ts, endpoint, remaining, rate_limit, reset_ts) VALUES (?, ?, ?, ?, ?)",
+                (int(_time.time()), endpoint, _i(rem), _i(lim), _i(rst)),
+            )
+            db.execute(
+                "DELETE FROM api_quota_log WHERE ts < ?",
+                (int(_time.time()) - 7 * 86400,),
+            )
+            db.commit()
+        except Exception:
+            # Quota persistence is best-effort — never let a transient
+            # DB lock kill the surrounding /report or /check flow. The
+            # next API call will retry the write soon enough.
+            try:
+                db.rollback()
+            except Exception:
+                pass
+    finally:
+        if own_db:
+            try:
+                db.close()
+            except Exception:
+                pass

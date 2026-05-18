@@ -15,7 +15,7 @@ import sys
 import time
 from _common import (
     API_BASE, BLOCKLIST_FILE, PF_TABLE,
-    die, ensure_state_dir, get_config, get_db, log,
+    die, ensure_state_dir, get_config, get_db, log, record_quota,
 )
 
 try:
@@ -37,6 +37,7 @@ def _fetch_one(api_key: str, confidence_min: int, limit: int,
         params=params,
         timeout=45,
     )
+    record_quota(None, "blacklist", r)
     if r.status_code != 200:
         raise RuntimeError(f"HTTP {r.status_code}: {r.text[:200]}")
     quota = r.headers.get("X-RateLimit-Remaining")
@@ -140,6 +141,95 @@ def collect_persistent_ips(db) -> list[str]:
     return [r[0] for r in rows]
 
 
+# ── v0.8 snapshot-rotation helpers ─────────────────────────────────────────
+#
+# Each successful download becomes its own immutable snapshot. The active
+# pf-alias is then derived from the last N snapshots:
+#   - union mode         → "every IP we have seen in the last N runs"
+#   - intersection mode  → "IP must appear in ≥ M of the last N runs"
+#
+# Default DB cost is bounded: at most N × max_ips rows in blacklist_snapshots,
+# plus an index on (ip) so the GROUP BY ip HAVING COUNT(*) >= M query at
+# alias-build time stays sub-second even at N=30, max_ips=10k.
+
+def add_snapshot(db, ips: list[str], fetched_ts: int,
+                 quota_remaining: int | None) -> int:
+    """Persist `ips` as one new immutable snapshot. Returns the snapshot_id
+    assigned by SQLite's AUTOINCREMENT. Caller is responsible for calling
+    prune_old_snapshots() afterwards so the rolling window stays bounded."""
+    cur = db.execute(
+        "INSERT INTO blacklist_snapshot_meta (fetched_ts, ip_count, quota_remaining) "
+        "VALUES (?, ?, ?)",
+        (fetched_ts, len(ips), quota_remaining),
+    )
+    snapshot_id = cur.lastrowid
+    if ips:
+        db.executemany(
+            "INSERT OR IGNORE INTO blacklist_snapshots (snapshot_id, ip) VALUES (?, ?)",
+            [(snapshot_id, ip) for ip in ips],
+        )
+    db.commit()
+    return snapshot_id
+
+
+def prune_old_snapshots(db, keep_n: int) -> int:
+    """Delete all snapshots older than the `keep_n` most recent. Returns
+    the number of snapshots that got pruned (mostly for logging)."""
+    keep_ids = [r[0] for r in db.execute(
+        "SELECT snapshot_id FROM blacklist_snapshot_meta "
+        "ORDER BY snapshot_id DESC LIMIT ?",
+        (keep_n,),
+    ).fetchall()]
+    if not keep_ids:
+        return 0
+    placeholders = ",".join("?" for _ in keep_ids)
+    db.execute(
+        f"DELETE FROM blacklist_snapshots WHERE snapshot_id NOT IN ({placeholders})",
+        keep_ids,
+    )
+    cur = db.execute(
+        f"DELETE FROM blacklist_snapshot_meta WHERE snapshot_id NOT IN ({placeholders})",
+        keep_ids,
+    )
+    db.commit()
+    return cur.rowcount or 0
+
+
+def compute_active_alias(db, history_mode: str, history_size: int,
+                         history_threshold: int) -> tuple[list[str], int]:
+    """Build the IP list that should populate the pf alias right now.
+
+    Returns (ip_list, snapshots_considered).
+
+    - union:        DISTINCT ip across the last `history_size` snapshots.
+                    Equivalent to persist_days but with a fixed-size window
+                    rather than a TTL.
+    - intersection: ip must appear in at least `history_threshold` of the
+                    last `history_size` snapshots. Caller's responsibility
+                    to keep threshold <= history_size (model layer enforces).
+    """
+    snap_ids = [r[0] for r in db.execute(
+        "SELECT snapshot_id FROM blacklist_snapshot_meta "
+        "ORDER BY snapshot_id DESC LIMIT ?",
+        (history_size,),
+    ).fetchall()]
+    if not snap_ids:
+        return [], 0
+    placeholders = ",".join("?" for _ in snap_ids)
+    if history_mode == "union":
+        sql = (f"SELECT ip FROM blacklist_snapshots "
+               f"WHERE snapshot_id IN ({placeholders}) "
+               f"GROUP BY ip ORDER BY ip")
+        rows = db.execute(sql, snap_ids).fetchall()
+    else:  # intersection
+        threshold = min(history_threshold, len(snap_ids))
+        sql = (f"SELECT ip FROM blacklist_snapshots "
+               f"WHERE snapshot_id IN ({placeholders}) "
+               f"GROUP BY ip HAVING COUNT(*) >= ? ORDER BY ip")
+        rows = db.execute(sql, snap_ids + [threshold]).fetchall()
+    return [r[0] for r in rows], len(snap_ids)
+
+
 def reload_pf_table() -> str:
     """Reload the pf table if it exists. Returns a short status message."""
     # Table only exists if OPNsense has built it from a URL-table alias.
@@ -181,18 +271,46 @@ def main() -> int:
     max_ips = int(cfg["blacklist"]["max_ips"])
     include_ipv6 = cfg["blacklist"].get("include_ipv6", "0") == "1"
     persist_days = int(cfg["blacklist"].get("persist_days", "0"))
+    history_mode = cfg["blacklist"].get("history_mode", "off")
+    history_size = int(cfg["blacklist"].get("history_size", "7"))
+    history_threshold = int(cfg["blacklist"].get("history_threshold", "4"))
 
     log(f"starting blacklist fetch (confidence={conf_min}, limit={max_ips}, "
-        f"include_ipv6={include_ipv6}, persist_days={persist_days})")
+        f"include_ipv6={include_ipv6}, persist_days={persist_days}, "
+        f"history_mode={history_mode}, history_size={history_size}, "
+        f"history_threshold={history_threshold})")
     try:
         fresh_ips, quota = fetch_blacklist(api_key, conf_min, max_ips, include_ipv6)
     except Exception as exc:
         record_run(False, 0, None, str(exc)[:200])
         die(f"fetch failed: {exc}")
 
-    if persist_days > 0:
-        # Persistent mode: keep every IP we've ever seen for `persist_days`,
-        # refresh last_seen each time it reappears in the daily pull.
+    now = int(time.time())
+
+    if history_mode in ("union", "intersection"):
+        # v0.8 snapshot rotation. Each run is its own immutable snapshot;
+        # the active pf-alias is computed from the last N snapshots either
+        # as DISTINCT-ip (union) or count >= threshold (intersection).
+        # This mode takes precedence over persist_days.
+        db = get_db()
+        snap_id = add_snapshot(db, fresh_ips, now, quota)
+        pruned = prune_old_snapshots(db, history_size)
+        active_ips, snaps_used = compute_active_alias(
+            db, history_mode, history_size, history_threshold
+        )
+        db.close()
+        write_blocklist(active_ips)
+        pf_msg = reload_pf_table()
+        msg = (f"{history_mode} mode: snap_id={snap_id} fresh={len(fresh_ips)}, "
+               f"history={snaps_used}/{history_size}"
+               + (f" threshold={history_threshold}" if history_mode == "intersection" else "")
+               + f" → alias={len(active_ips)} IPs, pruned_snapshots={pruned}, "
+               f"quota={quota}, {pf_msg}")
+        record_run(True, len(active_ips), quota, msg)
+
+    elif persist_days > 0:
+        # v0.7 persistent mode (kept for back-compat). Keep every IP for
+        # `persist_days`, refresh last_seen each time it reappears.
         db = get_db()
         added, refreshed, evicted = merge_into_persistent(db, fresh_ips, persist_days)
         merged_ips = collect_persistent_ips(db)
@@ -203,9 +321,9 @@ def main() -> int:
                f"{refreshed} refreshed), {evicted} evicted by TTL, "
                f"{len(merged_ips)} total in table, quota={quota}, {pf_msg}")
         record_run(True, len(merged_ips), quota, msg)
+
     else:
-        # Replace mode (default, original behaviour): the pf table is exactly
-        # today's AbuseIPDB top-N — yesterday's content gone.
+        # Replace mode (original, default). pf-table = today's top-N exactly.
         write_blocklist(fresh_ips)
         pf_msg = reload_pf_table()
         msg = f"replace mode: downloaded {len(fresh_ips)} IPs, quota={quota}, {pf_msg}"

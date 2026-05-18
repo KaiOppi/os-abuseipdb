@@ -1,7 +1,7 @@
 <model>
     <mount>//OPNsense/Abuseipdb</mount>
     <description>AbuseIPDB plugin configuration</description>
-    <version>0.1.5</version>
+    <version>0.1.6</version>
     <items>
         <general>
             <enabled type="BooleanField">
@@ -61,6 +61,27 @@
                 <default>0</default>
                 <Required>Y</Required>
             </persist_days>
+            <history_mode type="OptionField">
+                <Required>Y</Required>
+                <Default>off</Default>
+                <OptionValues>
+                    <off>Off — single snapshot per run (replace mode)</off>
+                    <union>Union — keep every IP seen in the last N runs</union>
+                    <intersection>Intersection — IP must appear in at least M of last N runs</intersection>
+                </OptionValues>
+            </history_mode>
+            <history_size type="IntegerField">
+                <MinimumValue>2</MinimumValue>
+                <MaximumValue>30</MaximumValue>
+                <default>7</default>
+                <Required>Y</Required>
+            </history_size>
+            <history_threshold type="IntegerField">
+                <MinimumValue>1</MinimumValue>
+                <MaximumValue>30</MaximumValue>
+                <default>4</default>
+                <Required>Y</Required>
+            </history_threshold>
             <block_interfaces type="TextField">
                 <default>wan</default>
                 <Mask>/^[a-zA-Z0-9_,\s]*$/u</Mask>
