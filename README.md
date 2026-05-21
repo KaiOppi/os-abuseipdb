@@ -12,7 +12,7 @@ OPNsense plugin for bidirectional [AbuseIPDB](https://www.abuseipdb.com) integra
 - **Dashboard widget** — live stats (blocklist size, last download, quota, reports, self-defense active/total, perma-block size).
 - **Fire & forget** — cron jobs are created automatically when you enable the feature (daily download, 5-minute reporter cycles, hourly self-defense cleanup, daily perma-block sweep, 5-minute hit-counter sampler).
 
-> **Status:** public beta (v0.8.0). Running in production on three OPNsense boxes. Looking for community testers — please open an issue or a r/opnsense reply with feedback.
+> **Status:** public beta (v0.8.1). Running in production on four OPNsense boxes. Looking for community testers — please open an issue or a r/opnsense reply with feedback.
 
 ## Screenshots
 
@@ -26,6 +26,20 @@ OPNsense plugin for bidirectional [AbuseIPDB](https://www.abuseipdb.com) integra
 
 ## Installation
 
+> ⚠️ **Heads up if you run Suricata (Intrusion Detection)**
+> On busy boxes with `os-suricata` enabled we have seen the configd daemon
+> crash during the post-install hook because configd received an
+> `ids list rulemetadata` request from the IDS while it was reloading.
+> If you run Suricata, **stop it first**, then install, then start it back:
+>
+> ```sh
+> service suricata stop
+> # ... install commands below ...
+> service suricata onestart
+> ```
+>
+> Boxes without Suricata are unaffected.
+
 In the OPNsense shell (Console → option 8):
 
 ```sh
@@ -36,12 +50,11 @@ pkg install -y py313-requests   # for Python 3.13 (OPNsense 26.1.5+)
 # pkg install -y py311-requests # for older 26.1.x
 
 # 2. Install the plugin
-pkg add https://github.com/KaiOppi/os-abuseipdb/releases/download/v0.8.0/os-abuseipdb-0.8.0.pkg
+pkg add https://github.com/KaiOppi/os-abuseipdb/releases/download/v0.8.1/os-abuseipdb-0.8.1.pkg
 ```
 
-Then go to **Firewall → AbuseIPDB**. (Since v0.3.2 the post-install hook
-invalidates the WebGUI menu/ACL caches automatically, so no logout+login
-or `service configd restart` is needed anymore.)
+Then go to **Firewall → AbuseIPDB**. The post-install hook flushes the
+WebGUI menu/ACL caches automatically — no logout+login required.
 
 ## Configuration
 

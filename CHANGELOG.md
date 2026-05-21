@@ -3,6 +3,15 @@
 All notable changes to this project are documented here.
 The format roughly follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project uses [Semantic Versioning](https://semver.org/).
 
+## [0.8.1] — 2026-05-21
+
+### Documentation
+- **README install section: Suricata-warning added.** On a busy production OPNsense with active Suricata IDS we hit a reproducible install-time outage: the `+POST_INSTALL` hook does `service configd restart` (standard practice for OPNsense plugins so configd reloads `actions.d`), and during that stop+start window os-suricata fired an `ids list rulemetadata` request that crashed configd on startup — taking the whole web UI with it. The fix on the affected box was to stop Suricata, restart configd cleanly, then continue. The README now tells Suricata users to `service suricata stop` before installing the plugin and to start it back afterwards. Boxes without Suricata are unaffected and don't need any extra steps.
+
+### Notes
+- No code, model, or behavioural changes — pure documentation update. Safe to upgrade from 0.8.0; the package contents are identical aside from build metadata.
+- A SIGHUP-based graceful reload was attempted as an in-hook fix but Python's default SIGHUP handler is `terminate`, which made the outage *worse* (configd died immediately on SIGHUP, then there was no daemon to restart). We have left `service configd restart` in place as it has worked on all other production boxes (home, bergstrasse, MKG, multiple Reddit-reported installs). The root cause sits in os-suricata's `ids list rulemetadata` action, not in our hook.
+
 ## [0.8.0] — 2026-05-18
 
 ### Added

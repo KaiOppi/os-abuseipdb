@@ -5,7 +5,7 @@
 set -eu
 
 NAME=os-abuseipdb
-VERSION=0.8.0
+VERSION=0.8.1
 ARCH=FreeBSD:14:amd64
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
@@ -103,6 +103,14 @@ if ! /usr/local/bin/python3 -c "import requests" >/dev/null 2>&1; then
     echo
 fi
 
+# Make configd pick up our new actions.d entries. This is a hard stop+start;
+# on busy boxes with an active Suricata IDS we have seen configd crash during
+# the restart window on a heavyweight `ids list rulemetadata` request. The
+# README install section therefore recommends stopping Suricata before pkg
+# add/upgrade on such systems. For systems without Suricata this restart is
+# fine. (We tried SIGHUP for a graceful reload but Python's default SIGHUP
+# action is terminate, so that path made the situation worse — see v0.8.1
+# notes.)
 service configd restart 2>/dev/null || true
 
 # Invalidate webgui menu/ACL/model caches so the new menu entry shows up
