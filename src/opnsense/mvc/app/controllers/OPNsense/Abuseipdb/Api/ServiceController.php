@@ -189,4 +189,117 @@ class ServiceController extends ApiMutableServiceControllerBase
         }
         return $data;
     }
+
+    /**
+     * v0.9.0: remove a single IP from the self-defense list. POST {ip}.
+     */
+    public function selfcareRemoveAction()
+    {
+        if (!$this->request->isPost()) {
+            return ['status' => 'failed', 'message' => 'POST required'];
+        }
+        $ip = trim((string)$this->request->getPost('ip', 'striptags', ''));
+        if ($ip === '' || !filter_var($ip, FILTER_VALIDATE_IP)) {
+            return ['status' => 'failed', 'message' => 'invalid ip address'];
+        }
+        $backend = new Backend();
+        // 2nd arg is a placeholder; selfcare_remove only reads it when arg1
+        // is the literal "all". Pass a no-op value to keep configd's argv
+        // shape consistent.
+        $output = trim($backend->configdpRun('abuseipdb selfcare_remove', [$ip, '-']));
+        $data = json_decode($output, true);
+        if (!is_array($data)) {
+            return ['status' => 'failed', 'raw' => $output];
+        }
+        return $data;
+    }
+
+    /**
+     * v0.9.0: clear the entire active self-defense list. POST {confirm:"yes"}.
+     */
+    public function selfcareClearAllAction()
+    {
+        if (!$this->request->isPost()) {
+            return ['status' => 'failed', 'message' => 'POST required'];
+        }
+        $confirm = trim((string)$this->request->getPost('confirm', 'striptags', ''));
+        if (strtolower($confirm) !== 'yes') {
+            return ['status' => 'failed',
+                    'message' => 'confirmation required (POST confirm=yes)'];
+        }
+        $backend = new Backend();
+        $output = trim($backend->configdpRun('abuseipdb selfcare_remove', ['all', 'yes']));
+        $data = json_decode($output, true);
+        if (!is_array($data)) {
+            return ['status' => 'failed', 'raw' => $output];
+        }
+        return $data;
+    }
+
+    /**
+     * v0.9.0: return the operator-managed whitelist as JSON.
+     */
+    public function whitelistListAction()
+    {
+        $limit = (int)($this->request->get('limit', 'int', 500));
+        if ($limit < 1) $limit = 500;
+        if ($limit > 5000) $limit = 5000;
+
+        $backend = new Backend();
+        $output = trim($backend->configdpRun('abuseipdb whitelist_list', [(string)$limit]));
+        $data = json_decode($output, true);
+        if (!is_array($data)) {
+            return ['status' => 'failed', 'raw' => $output];
+        }
+        return $data;
+    }
+
+    /**
+     * v0.9.0: add an IP to the whitelist. POST {ip, source?, note?}.
+     */
+    public function whitelistAddAction()
+    {
+        if (!$this->request->isPost()) {
+            return ['status' => 'failed', 'message' => 'POST required'];
+        }
+        $ip = trim((string)$this->request->getPost('ip', 'striptags', ''));
+        $source = trim((string)$this->request->getPost('source', 'striptags', 'manual'));
+        $note = trim((string)$this->request->getPost('note', 'striptags', ''));
+        if ($ip === '' || !filter_var($ip, FILTER_VALIDATE_IP)) {
+            return ['status' => 'failed', 'message' => 'invalid ip address'];
+        }
+        $source = preg_replace('/[^A-Za-z0-9 _\-\.\:]/', '', $source) ?: 'manual';
+        $note = preg_replace('/[^A-Za-z0-9 _\-\.\:]/', '', $note);
+        $note = substr($note ?: '', 0, 200);
+        $args = [$ip, $source !== '' ? $source : 'manual',
+                 $note !== '' ? $note : '-'];
+        $backend = new Backend();
+        $output = trim($backend->configdpRun('abuseipdb whitelist_add', $args));
+        $data = json_decode($output, true);
+        if (!is_array($data)) {
+            return ['status' => 'failed', 'raw' => $output];
+        }
+        return $data;
+    }
+
+    /**
+     * v0.9.0: remove an IP from the whitelist. POST {ip}.
+     */
+    public function whitelistRemoveAction()
+    {
+        if (!$this->request->isPost()) {
+            return ['status' => 'failed', 'message' => 'POST required'];
+        }
+        $ip = trim((string)$this->request->getPost('ip', 'striptags', ''));
+        if ($ip === '' || !filter_var($ip, FILTER_VALIDATE_IP)) {
+            return ['status' => 'failed', 'message' => 'invalid ip address'];
+        }
+        $backend = new Backend();
+        $output = trim($backend->configdpRun('abuseipdb whitelist_remove', [$ip]));
+        $data = json_decode($output, true);
+        if (!is_array($data)) {
+            return ['status' => 'failed', 'raw' => $output];
+        }
+        return $data;
+    }
 }

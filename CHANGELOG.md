@@ -3,6 +3,34 @@
 All notable changes to this project are documented here.
 The format roughly follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project uses [Semantic Versioning](https://semver.org/).
 
+## [0.9.0] — 2026-05-22
+
+### Added
+- **Operator whitelist (Constantin's request).** New top-level *Whitelist* tab with add / list / remove. Whitelisted IPs are treated as *never touch* across the entire plugin:
+  - Reporter skips them before any `/report` or `/selfcare` action and logs the skip (`whitelist skip <ip> via <iface> (reporter)`).
+  - Daily blacklist download filters them out of the pf alias regardless of mode (replace / persist-days / union / intersection); the dropped count is recorded per run.
+  - `permaban_add` refuses to permaban a whitelisted IP with an explicit error.
+  - `permaban_promote` (auto-promote scan) skips whitelisted candidates and surfaces the count in its JSON return.
+  - A per-IP **skips/30d** counter in the Whitelist tab shows which entries are actually doing work (so dead entries can be pruned).
+  - **Side-effect on add:** whitelisting an IP lifts it from any active self-defense entry *and* removes it from the perma-block list. Operator intent ("this IP is fine") applies retroactively.
+
+- **Manual self-defense removal.** Each row of the *Self-Defense* tab now has three buttons: trash (drop just this entry, false-positive recovery), shield (move to whitelist), bolt (promote to permaban — pre-existing). A new red **Clear all** button at the top of the tab nukes every active self-defense entry in one shot (requires explicit confirm). Reporter will of course re-add a real attacker on the next run, so this is safe to use during recovery.
+
+### Schema
+- Two new SQLite tables (additive migration, no destructive change): `whitelist` (ip PK, added_ts, source, note) and `whitelist_skips` (rolling 30-day skip ledger, auto-pruned). Settings model bumped from 0.1.6 → 0.1.7.
+
+### API
+- Five new endpoints on `Api/ServiceController`:
+  - `POST /api/abuseipdb/service/selfcare_remove`        (body: `ip`)
+  - `POST /api/abuseipdb/service/selfcare_clear_all`     (body: `confirm=yes`)
+  - `POST /api/abuseipdb/service/whitelist_add`          (body: `ip, source?, note?`)
+  - `POST /api/abuseipdb/service/whitelist_remove`       (body: `ip`)
+  - `GET  /api/abuseipdb/service/whitelist_list`         (query: `limit?`)
+- Status panel + `stats.py` now expose a `whitelist_count` field.
+
+### Notes
+- No reporter-loop or blacklist-cron schedule change. Pure additive on top of v0.8.1.
+
 ## [0.8.1] — 2026-05-21
 
 ### Documentation

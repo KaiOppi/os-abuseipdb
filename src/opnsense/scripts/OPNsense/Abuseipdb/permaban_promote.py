@@ -12,7 +12,8 @@ import subprocess
 import sys
 import time
 
-from _common import PF_TABLE_PERMABAN, get_config, get_db, log, out_json
+from _common import (PF_TABLE_PERMABAN, get_config, get_db, is_whitelisted,
+                     log, out_json, record_whitelist_skip)
 
 
 def pfctl_add(ip: str) -> None:
@@ -59,7 +60,14 @@ def main() -> int:
     ).fetchall()
 
     promoted = []
+    skipped_wl = 0
     for ip, occ, last_ts in rows:
+        # v0.9.0: never promote whitelisted IPs — operator intent overrules.
+        if is_whitelisted(db, ip):
+            record_whitelist_skip(db, ip, "permaban-promote")
+            skipped_wl += 1
+            log(f"permaban promote skip {ip} — whitelisted")
+            continue
         last_str = time.strftime("%Y-%m-%d %H:%M", time.localtime(last_ts))
         db.execute(
             "INSERT OR REPLACE INTO permaban (ip, added_ts, source, note) "
@@ -84,6 +92,7 @@ def main() -> int:
         "status": "ok",
         "promoted": len(promoted),
         "resynced": len(missing),
+        "skipped_whitelist": skipped_wl,
         "ips": promoted,
         "threshold": threshold,
         "window_days": window_days,

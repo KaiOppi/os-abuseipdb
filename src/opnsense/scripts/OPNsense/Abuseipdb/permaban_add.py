@@ -14,8 +14,8 @@ import subprocess
 import sys
 import time
 
-from _common import (PF_TABLE_PERMABAN, PF_TABLE_SELFCARE, get_db, log,
-                     out_json)
+from _common import (PF_TABLE_PERMABAN, PF_TABLE_SELFCARE, get_db,
+                     is_whitelisted, log, out_json)
 
 
 def is_valid_ip(s: str) -> bool:
@@ -45,6 +45,18 @@ def main() -> int:
 
     db = get_db()
     now = int(time.time())
+
+    # v0.9.0: whitelist trumps a manual permaban request — operator already
+    # said "this IP is fine". Refuse loudly with status=error in the JSON.
+    # Return code stays 0 so configd doesn't swallow the response (it drops
+    # stdout on any non-zero exit, and the UI then only sees "Execute error").
+    if is_whitelisted(db, ip):
+        db.close()
+        log(f"permaban add refused — {ip} is whitelisted")
+        out_json({"status": "error",
+                  "message": f"{ip} is on the whitelist — remove it from the "
+                             f"whitelist first if you really want to permaban."})
+        return 0
 
     existing = db.execute("SELECT 1 FROM permaban WHERE ip = ?", (ip,)).fetchone()
     db.execute(

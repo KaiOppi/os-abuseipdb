@@ -24,7 +24,8 @@ from collections import defaultdict
 from _common import (API_BASE, PF_TABLE_PERMABAN, PF_TABLE_SELFCARE,
                      STATE_DIR, die, ensure_state_dir, get_config, get_db,
                      get_iface_map, get_local_networks,
-                     get_wan_iface_phys_names, log, record_quota)
+                     get_wan_iface_phys_names, is_whitelisted, log,
+                     record_quota, record_whitelist_skip)
 
 try:
     import requests
@@ -419,6 +420,14 @@ def main() -> int:
         if info["count"] < min_hits:
             continue
         if should_skip_ip(db, ip, rate_min):
+            continue
+        # v0.9.0: operator-managed whitelist takes precedence over every
+        # downstream action. We skip the IP entirely (no /check, no
+        # /report, no selfcare add) and bump the skip counter so the
+        # UI can show the whitelist is doing work.
+        if is_whitelisted(db, ip):
+            record_whitelist_skip(db, ip, "reporter")
+            log(f"whitelist skip {ip} via {','.join(sorted(info['ifaces']))} (reporter)")
             continue
 
         ports = ",".join(sorted(info["ports"]))[:60]

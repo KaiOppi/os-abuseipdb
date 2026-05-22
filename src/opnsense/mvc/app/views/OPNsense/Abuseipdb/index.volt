@@ -11,11 +11,12 @@
     .abuseipdb-info td.lbl { color: #555; width: 180px; white-space: nowrap; }
     .abuseipdb-info .ok { color: #2e7d32; font-weight: 600; }
     .abuseipdb-info .warn { color: #c62828; font-weight: 600; }
-    #reportsTable, #selfcareTable, #permabanTable { width: 100%; font-size: 12px; }
+    #reportsTable, #selfcareTable, #permabanTable, #whitelistTable { width: 100%; font-size: 12px; }
     #reportsTable td, #reportsTable th,
     #selfcareTable td, #selfcareTable th,
-    #permabanTable td, #permabanTable th { padding: 4px 8px; border-bottom: 1px solid #eee; }
-    #reportsTable th, #selfcareTable th, #permabanTable th { background: #f4f4f4; text-align: left; }
+    #permabanTable td, #permabanTable th,
+    #whitelistTable td, #whitelistTable th { padding: 4px 8px; border-bottom: 1px solid #eee; }
+    #reportsTable th, #selfcareTable th, #permabanTable th, #whitelistTable th { background: #f4f4f4; text-align: left; }
 </style>
 
 <script>
@@ -89,6 +90,7 @@
                 $("#stat_selfcare_active").text((d.selfcare_active || 0).toLocaleString());
                 $("#stat_selfcare_total").text((d.selfcare_total || 0).toLocaleString());
                 $("#stat_permaban_count").text((d.permaban_count || 0).toLocaleString());
+                $("#stat_whitelist_count").text((d.whitelist_count || 0).toLocaleString());
                 renderStatsTab(d);
             }
         );
@@ -234,9 +236,15 @@
                         $tr.append($('<td>').text(fmtTs(r.added_ts)));
                         $tr.append($('<td>').text(fmtTs(r.expires_ts) + ' (' + fmtDuration(r.remaining_sec) + ')'));
                         $tr.append($('<td>').text(r.categories || ''));
-                        var $btn = $('<button class="btn btn-xs btn-warning promoteBtn" title="Promote to Perma-Block"><span class="fa fa-bolt"></span> Permaban</button>');
+                        // Action cell holds three buttons: remove (trash),
+                        // whitelist (shield), permaban (bolt).
+                        var $rm = $('<button class="btn btn-xs btn-default scRemoveBtn" title="{{ lang._('Remove from self-defense (false positive)') }}"><span class="fa fa-trash"></span></button>');
+                        $rm.attr('data-ip', r.ip);
+                        var $wl = $('<button class="btn btn-xs btn-info scWhitelistBtn" style="margin-left:4px" title="{{ lang._('Move to whitelist — no more blocks for this IP') }}"><span class="fa fa-shield"></span></button>');
+                        $wl.attr('data-ip', r.ip);
+                        var $btn = $('<button class="btn btn-xs btn-warning promoteBtn" style="margin-left:4px" title="{{ lang._('Promote to Perma-Block') }}"><span class="fa fa-bolt"></span></button>');
                         $btn.attr('data-ip', r.ip);
-                        $tr.append($('<td>').append($btn));
+                        $tr.append($('<td>').css('white-space', 'nowrap').append($rm).append($wl).append($btn));
                         tbody.append($tr);
                     });
                 }
@@ -279,6 +287,41 @@
                         tbody.append($tr);
                     });
                 }
+            }
+        );
+    }
+
+    function refreshWhitelist() {
+        ajaxCall(
+            url = "/api/abuseipdb/service/whitelist_list",
+            sendData = {limit: 500},
+            callback = function(resp) {
+                if (!resp || resp.status !== 'ok') return;
+                var rows = resp.data.rows || [];
+                $("#whitelistTotal").text(resp.data.total || 0);
+                $("#whitelistSkips30d").text(resp.data.skips_30d_total || 0);
+                var tbody = $("#whitelistTable tbody").empty();
+                if (rows.length === 0) {
+                    tbody.append('<tr><td colspan="5" style="text-align:center;color:#888;padding:12px">{{ lang._("No whitelist entries.") }}</td></tr>');
+                    return;
+                }
+                rows.forEach(function(r) {
+                    var $tr = $('<tr>');
+                    $tr.append($('<td>').css('white-space','nowrap').append($('<tt>').text(r.ip)));
+                    $tr.append($('<td>').text(fmtTs(r.added_ts)));
+                    $tr.append($('<td>').text(r.source || ''));
+                    $tr.append($('<td>').text(r.note || ''));
+                    // Skip-counter doubles as a remove button cell.
+                    var $td = $('<td>').css('white-space','nowrap');
+                    var skip = (r.skips_30d || 0).toLocaleString();
+                    $td.append($('<span>').css({color:'#888','font-size':'11px','margin-right':'8px'})
+                                          .text(skip + ' {{ lang._("skips/30d") }}'));
+                    var $rm = $('<button class="btn btn-xs btn-default whitelistRemoveBtn" title="{{ lang._('Remove from whitelist') }}"><span class="fa fa-trash"></span></button>');
+                    $rm.attr('data-ip', r.ip);
+                    $td.append($rm);
+                    $tr.append($td);
+                    tbody.append($tr);
+                });
             }
         );
     }
@@ -389,6 +432,7 @@
             if (href === '#logtab') refreshReports();
             if (href === '#selfcare') refreshSelfcare();
             if (href === '#permaban') refreshPermaban();
+            if (href === '#whitelist') refreshWhitelist();
             if (href === '#statstab') refreshStats();
         });
         $("#refreshReportsAct").click(refreshReports);
@@ -450,6 +494,104 @@
                 }
             );
         });
+
+        // v0.9.0: trash button on each row of the self-defense list — drops
+        // a single false-positive entry without permabanning it.
+        $("#selfcareTable").on("click", ".scRemoveBtn", function() {
+            var ip = $(this).attr("data-ip");
+            if (!ip) return;
+            if (!confirm("{{ lang._('Remove ') }}" + ip + " {{ lang._('from self-defense list?') }}")) return;
+            ajaxCall(
+                url = "/api/abuseipdb/service/selfcare_remove",
+                sendData = {ip: ip},
+                callback = function(resp) {
+                    refreshSelfcare();
+                    refreshStats();
+                }
+            );
+        });
+
+        // v0.9.0: shield button — move IP to whitelist (lifts selfcare +
+        // permaban, prevents future blocks/reports).
+        $("#selfcareTable").on("click", ".scWhitelistBtn", function() {
+            var ip = $(this).attr("data-ip");
+            if (!ip) return;
+            if (!confirm("{{ lang._('Whitelist ') }}" + ip + "?\n\n" +
+                         "{{ lang._('This IP will no longer be blocked or reported. Any active self-defense or permaban entry will be lifted.') }}")) {
+                return;
+            }
+            ajaxCall(
+                url = "/api/abuseipdb/service/whitelist_add",
+                sendData = {ip: ip, source: "selfcare", note: "false positive"},
+                callback = function(resp) {
+                    if (resp && resp.status === 'ok') {
+                        refreshSelfcare();
+                        refreshPermaban();
+                        refreshStats();
+                    } else {
+                        alert((resp && resp.message) || "{{ lang._('Whitelist add failed') }}");
+                    }
+                }
+            );
+        });
+
+        // v0.9.0: clear-all self-defense (false-positive recovery mode).
+        $("#selfcareClearAllAct").click(function() {
+            if (!confirm("{{ lang._('Clear the entire self-defense list?') }}\n\n" +
+                         "{{ lang._('This unblocks every IP currently in the list. They may get re-added on the next reporter run. Use this only when several false positives slipped through.') }}")) {
+                return;
+            }
+            ajaxCall(
+                url = "/api/abuseipdb/service/selfcare_clear_all",
+                sendData = {confirm: "yes"},
+                callback = function(resp) {
+                    var n = (resp && resp.removed) || 0;
+                    $("#responseMsg").removeClass("hidden").html(
+                        "{{ lang._('Cleared self-defense list:') }} " + n + " " + "{{ lang._('entries removed.') }}"
+                    );
+                    refreshSelfcare();
+                    refreshStats();
+                }
+            );
+        });
+
+        // v0.9.0: Whitelist tab — add button.
+        $("#whitelistAddAct").click(function() {
+            var ip = ($("#whitelist_new_ip").val() || "").trim();
+            var note = ($("#whitelist_new_note").val() || "").trim();
+            if (!ip) { alert("{{ lang._('Enter an IP address.') }}"); return; }
+            ajaxCall(
+                url = "/api/abuseipdb/service/whitelist_add",
+                sendData = {ip: ip, source: "manual", note: note},
+                callback = function(resp) {
+                    if (resp && resp.status === 'ok') {
+                        $("#whitelist_new_ip").val("");
+                        $("#whitelist_new_note").val("");
+                        refreshWhitelist();
+                        refreshStats();
+                    } else {
+                        alert((resp && resp.message) || "{{ lang._('Whitelist add failed') }}");
+                    }
+                }
+            );
+        });
+
+        // v0.9.0: Whitelist tab — remove button per row.
+        $("#whitelistTable").on("click", ".whitelistRemoveBtn", function() {
+            var ip = $(this).attr("data-ip");
+            if (!ip) return;
+            if (!confirm("{{ lang._('Remove ') }}" + ip + " {{ lang._('from whitelist?') }}")) return;
+            ajaxCall(
+                url = "/api/abuseipdb/service/whitelist_remove",
+                sendData = {ip: ip},
+                callback = function(resp) {
+                    refreshWhitelist();
+                    refreshStats();
+                }
+            );
+        });
+
+        $("#refreshWhitelistAct").click(refreshWhitelist);
 
         // Manual scan trigger on Permaban tab.
         $("#permabanScanAct").click(function() {
@@ -521,6 +663,10 @@
             <td class="lbl">{{ lang._('Perma-Block entries') }}</td>
             <td><span id="stat_permaban_count">—</span></td>
         </tr>
+        <tr>
+            <td class="lbl">{{ lang._('Whitelist entries') }}</td>
+            <td><span id="stat_whitelist_count">—</span></td>
+        </tr>
     </table>
     <div id="stat_snapshots_wrap" style="margin-top:10px; display:none">
         <details>
@@ -564,6 +710,7 @@
     <li><a data-toggle="tab" href="#reporter">{{ lang._('Reporter') }}</a></li>
     <li><a data-toggle="tab" href="#selfcare">{{ lang._('Self-Defense') }}</a></li>
     <li><a data-toggle="tab" href="#permaban">{{ lang._('Perma-Block') }}</a></li>
+    <li><a data-toggle="tab" href="#whitelist">{{ lang._('Whitelist') }}</a></li>
     <li><a data-toggle="tab" href="#logtab">{{ lang._('Log') }}</a></li>
     <li><a data-toggle="tab" href="#statstab">{{ lang._('Statistics') }}</a></li>
 </ul>
@@ -602,6 +749,10 @@
                 </label>
                 <button class="btn btn-default btn-xs" id="refreshSelfcareAct" style="margin-left:10px">
                     <span class="fa fa-refresh"></span> {{ lang._('Refresh') }}
+                </button>
+                <button class="btn btn-danger btn-xs" id="selfcareClearAllAct" style="margin-left:6px"
+                        title="{{ lang._('Clear every active self-defense entry — false-positive recovery') }}">
+                    <span class="fa fa-eraser"></span> {{ lang._('Clear all') }}
                 </button>
             </h4>
             <table id="selfcareTable">
@@ -663,6 +814,54 @@
                         <th>{{ lang._('Source') }}</th>
                         <th>{{ lang._('Note') }}</th>
                         <th>{{ lang._('Action') }}</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
+    <div id="whitelist" class="tab-pane fade">
+        <div style="padding:10px 15px 15px 15px">
+            <p style="color:#555;font-size:12px;margin:0 0 8px 0">
+                {{ lang._('Whitelisted IPs are never reported, blocked, permabanned, or included in the downloaded blacklist. Use this for known-good sources (your monitoring, remote-support tools, etc.) that occasionally trip the reporter.') }}
+            </p>
+            <h4 style="margin-top:18px">
+                {{ lang._('Add to Whitelist') }}
+            </h4>
+            <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
+                <div>
+                    <label style="display:block;font-size:11px;color:#555">{{ lang._('IP address') }}</label>
+                    <input type="text" id="whitelist_new_ip" placeholder="1.2.3.4" class="form-control" style="width:160px"/>
+                </div>
+                <div>
+                    <label style="display:block;font-size:11px;color:#555">{{ lang._('Note (optional)') }}</label>
+                    <input type="text" id="whitelist_new_note" placeholder="{{ lang._('e.g. PCVisit remote support') }}" class="form-control" style="width:280px"/>
+                </div>
+                <div>
+                    <button class="btn btn-primary btn-sm" id="whitelistAddAct">
+                        <span class="fa fa-plus"></span> {{ lang._('Add') }}
+                    </button>
+                </div>
+            </div>
+            <p style="color:#777;font-size:11px;margin-top:6px">
+                {{ lang._('Adding an IP that is currently blocked (self-defense or perma-block) will lift those entries automatically.') }}
+            </p>
+            <h4 style="margin-top:24px">
+                {{ lang._('Whitelisted IPs') }}
+                (<span id="whitelistTotal">0</span>,
+                <span id="whitelistSkips30d">0</span> {{ lang._('skips in last 30d') }})
+                <button class="btn btn-default btn-xs" id="refreshWhitelistAct" style="margin-left:10px">
+                    <span class="fa fa-refresh"></span> {{ lang._('Refresh') }}
+                </button>
+            </h4>
+            <table id="whitelistTable">
+                <thead>
+                    <tr>
+                        <th>{{ lang._('IP') }}</th>
+                        <th>{{ lang._('Added') }}</th>
+                        <th>{{ lang._('Source') }}</th>
+                        <th>{{ lang._('Note') }}</th>
+                        <th>{{ lang._('Skips / Action') }}</th>
                     </tr>
                 </thead>
                 <tbody></tbody>

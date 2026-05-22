@@ -38,6 +38,7 @@ def main() -> int:
         "selfcare_active": 0,
         "selfcare_total": 0,
         "permaban_count": 0,
+        "whitelist_count": 0,
         "iface_descr": {},          # identifier → friendly name (for UI)
         "by_iface": {               # all keyed by identifier (wan, opt1, ...)
             "selfcare_active": {},
@@ -111,6 +112,14 @@ def main() -> int:
 
         row = db.execute("SELECT COUNT(*) FROM permaban").fetchone()
         data["permaban_count"] = row[0] if row else 0
+
+        # v0.9.0: whitelist counter (table is created by the additive
+        # migration; guard for older DBs anyway).
+        try:
+            row = db.execute("SELECT COUNT(*) FROM whitelist").fetchone()
+            data["whitelist_count"] = row[0] if row else 0
+        except Exception:
+            data["whitelist_count"] = 0
 
         # v0.8: snapshot history (last N entries, newest first). Empty when
         # the user runs replace or persist-days mode, populated under

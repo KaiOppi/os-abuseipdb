@@ -182,6 +182,31 @@ def get_db() -> sqlite3.Connection:
         )
     """)
     db.execute("CREATE INDEX IF NOT EXISTS idx_quota_endpoint_ts ON api_quota_log (endpoint, ts DESC)")
+    # v0.9.0: operator-managed whitelist (Constantin's wishlist). IPs in
+    # this table never enter selfcare, never get reported to AbuseIPDB,
+    # are excluded when the blacklist downloader writes the pf alias,
+    # and are refused for permaban. The auto-promote scan ignores them
+    # too. Strict bypass — meant for known-good remote-support endpoints
+    # (PCVisit, AnyDesk, TeamViewer relays, …) that AbuseIPDB occasionally
+    # flags as part of shared-IP buckets.
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS whitelist (
+            ip TEXT PRIMARY KEY,
+            added_ts INTEGER NOT NULL,
+            source TEXT,
+            note TEXT
+        )
+    """)
+    # v0.9.0: counter so the UI can show "X reports skipped because the
+    # source IP is on the operator's whitelist". One row per skip path.
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS whitelist_skips (
+            ts INTEGER NOT NULL,
+            ip TEXT NOT NULL,
+            path TEXT NOT NULL,
+            PRIMARY KEY (ts, ip, path)
+        )
+    """)
     # Schema migrations — additive only, never destructive.
     if not _column_exists(db, "reports", "iface"):
         db.execute("ALTER TABLE reports ADD COLUMN iface TEXT")
@@ -441,3 +466,45 @@ def record_quota(db, endpoint: str, response) -> None:
                 db.close()
             except Exception:
                 pass
+
+
+
+# ---------------------------------------------------------------------------
+# v0.9.0 — whitelist helpers
+# ---------------------------------------------------------------------------
+
+def is_whitelisted(db, ip: str) -> bool:
+    """True when the IP appears in the operator-managed whitelist.
+    Cheap O(log n) lookup via the PK index — safe to call on the per-
+    candidate hot path of the reporter."""
+    if not ip:
+        return False
+    row = db.execute("SELECT 1 FROM whitelist WHERE ip = ?", (ip,)).fetchone()
+    return row is not None
+
+
+def record_whitelist_skip(db, ip: str, path: str) -> None:
+    """Record a "would-have-acted-but-IP-was-whitelisted" event so the
+    UI can show how often the whitelist actually intervenes. path is a
+    short tag ('selfcare', 'report', 'blacklist', 'permaban_add',
+    'permaban_promote') — useful when diagnosing why an IP isn't
+    landing where the operator expected."""
+    import time as _time
+    try:
+        db.execute(
+            "INSERT OR REPLACE INTO whitelist_skips (ts, ip, path) "
+            "VALUES (?, ?, ?)",
+            (int(_time.time()), ip, path),
+        )
+        # Keep the table from growing forever — 30 days is plenty for
+        # eye-balling whether the whitelist is doing anything useful.
+        db.execute(
+            "DELETE FROM whitelist_skips WHERE ts < ?",
+            (int(_time.time()) - 30 * 86400,),
+        )
+        db.commit()
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass

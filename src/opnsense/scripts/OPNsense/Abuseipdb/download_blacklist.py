@@ -16,6 +16,7 @@ import time
 from _common import (
     API_BASE, BLOCKLIST_FILE, PF_TABLE,
     die, ensure_state_dir, get_config, get_db, log, record_quota,
+    record_whitelist_skip,
 )
 
 try:
@@ -88,6 +89,30 @@ def write_blocklist(ips: list[str]) -> None:
         if ips:
             fh.write("\n")
     os.replace(tmp, BLOCKLIST_FILE)
+
+
+def apply_whitelist_filter(ips: list[str]) -> tuple[list[str], int]:
+    """v0.9.0: drop whitelisted IPs from the pf alias and record skips so
+    the operator can see in the UI which entries are doing work.
+
+    Returns (filtered_ips, dropped_count).
+    """
+    db = get_db()
+    try:
+        wl = {row[0] for row in db.execute("SELECT ip FROM whitelist").fetchall()}
+        if not wl:
+            return ips, 0
+        kept = []
+        dropped = 0
+        for ip in ips:
+            if ip in wl:
+                record_whitelist_skip(db, ip, "blacklist")
+                dropped += 1
+            else:
+                kept.append(ip)
+        return kept, dropped
+    finally:
+        db.close()
 
 
 def merge_into_persistent(db, fresh_ips: list[str], ttl_days: int) -> tuple[int, int, int]:
@@ -299,13 +324,15 @@ def main() -> int:
             db, history_mode, history_size, history_threshold
         )
         db.close()
+        active_ips, wl_dropped = apply_whitelist_filter(active_ips)
         write_blocklist(active_ips)
         pf_msg = reload_pf_table()
         msg = (f"{history_mode} mode: snap_id={snap_id} fresh={len(fresh_ips)}, "
                f"history={snaps_used}/{history_size}"
                + (f" threshold={history_threshold}" if history_mode == "intersection" else "")
                + f" → alias={len(active_ips)} IPs, pruned_snapshots={pruned}, "
-               f"quota={quota}, {pf_msg}")
+               + (f"whitelist_dropped={wl_dropped}, " if wl_dropped else "")
+               + f"quota={quota}, {pf_msg}")
         record_run(True, len(active_ips), quota, msg)
 
     elif persist_days > 0:
@@ -315,19 +342,25 @@ def main() -> int:
         added, refreshed, evicted = merge_into_persistent(db, fresh_ips, persist_days)
         merged_ips = collect_persistent_ips(db)
         db.close()
+        merged_ips, wl_dropped = apply_whitelist_filter(merged_ips)
         write_blocklist(merged_ips)
         pf_msg = reload_pf_table()
         msg = (f"persistent mode: {len(fresh_ips)} fresh ({added} new, "
                f"{refreshed} refreshed), {evicted} evicted by TTL, "
-               f"{len(merged_ips)} total in table, quota={quota}, {pf_msg}")
+               f"{len(merged_ips)} total in table, "
+               + (f"whitelist_dropped={wl_dropped}, " if wl_dropped else "")
+               + f"quota={quota}, {pf_msg}")
         record_run(True, len(merged_ips), quota, msg)
 
     else:
         # Replace mode (original, default). pf-table = today's top-N exactly.
-        write_blocklist(fresh_ips)
+        active_ips, wl_dropped = apply_whitelist_filter(fresh_ips)
+        write_blocklist(active_ips)
         pf_msg = reload_pf_table()
-        msg = f"replace mode: downloaded {len(fresh_ips)} IPs, quota={quota}, {pf_msg}"
-        record_run(True, len(fresh_ips), quota, msg)
+        msg = (f"replace mode: downloaded {len(fresh_ips)} IPs, "
+               + (f"whitelist_dropped={wl_dropped}, " if wl_dropped else "")
+               + f"quota={quota}, {pf_msg}")
+        record_run(True, len(active_ips), quota, msg)
 
     log(msg)
     print(msg)
