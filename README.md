@@ -6,10 +6,11 @@ OPNsense plugin for bidirectional [AbuseIPDB](https://www.abuseipdb.com) integra
 - **Reporter** — parses the OPNsense firewall log and submits attacker IPs back to AbuseIPDB (bidirectional participation in the threat-intelligence network).
 - **Self-Defense** — TTL-based local blocklist populated from reporter submits; closes the gap while AbuseIPDB's community catches up.
 - **Perma-Block** — repeat offenders that come back after their Self-Defense TTL expired get auto-promoted to a permanent block list, with a per-IP hit counter (cumulative across reboots) so you see exactly how often each entry actually triggered.
+- **Whitelist** — operator-managed *never touch* list: whitelisted IPs are excluded from reports, self-defense, perma-block, and the downloaded blacklist. Designed for known-good sources (remote support tools, monitoring, partner networks) that occasionally trip the reporter. Adding an IP automatically lifts any active self-defense or perma-block entry for it.
 - **Configurable rule style** — choose where the plugin places its block rules: classic `Firewall: Rules: WAN` (legacy), the modern `Firewall: Automation: Filter` tab, or *None* if you'd rather craft rules yourself against the maintained aliases. Style switches auto-clean up rules in the previously-used location.
 - **Per-interface tracking** — every report, self-defense entry and perma-block hit knows which uplink it came in over; useful for multi-WAN setups (failover or load-balance) to see *where* the attack pressure lands.
 - **Statistics tab** — per-interface counters and a 14-day trend for reports and self-defense additions; helps spot which uplink is the noisier target and how the load develops over time.
-- **Dashboard widget** — live stats (blocklist size, last download, quota, reports, self-defense active/total, perma-block size).
+- **Dashboard widget** — live stats (blocklist size, last download, quota, reports, self-defense active/total, perma-block size, whitelist size).
 - **Fire & forget** — cron jobs are created automatically when you enable the feature (daily download, 5-minute reporter cycles, hourly self-defense cleanup, daily perma-block sweep, 5-minute hit-counter sampler).
 
 > **Status:** public beta (v0.9.0). Running in production on four OPNsense boxes. Looking for community testers — please open an issue or a r/opnsense reply with feedback.
@@ -147,6 +148,33 @@ The Perma-Block tab shows the live list with two telemetry columns:
 - **Last hit** — timestamp of the last counter advance.
 
 You can also add IPs manually (e.g. for a problem source you've identified outside the reporter path) — the **Add to Perma-Block** form takes an IP plus an optional note.
+
+### Whitelist
+
+Tab **Whitelist**.
+
+An operator-managed *never touch* list for known-good sources that keep tripping the reporter — remote-support tools (PCVisit, AnyDesk, TeamViewer relay IPs), monitoring probes, partner networks, your own VPS jumphost, etc. Whitelisted IPs are honoured across the whole plugin:
+
+- **Reporter** skips them before any `/report` or self-defense action and records the skip.
+- **Daily blacklist download** filters them out of the `abuseipdb_blacklist` pf alias regardless of mode (replace / persist-days / union / intersection).
+- **`permaban_add`** refuses with an explicit error if the IP is whitelisted.
+- **Auto-promote scan** skips whitelisted candidates.
+
+Unlike the three other lists, the whitelist does **not** create its own pf table or block rule — it's a software gate in front of the existing actions. It only prevents *this plugin* from acting on the IP; other firewall rules, IDS/IPS plugins, etc. are untouched.
+
+**Side-effect on add:** if the IP is currently in self-defense or perma-block, those entries are lifted automatically (DB + pf table). So in the typical "I see PCVisit's IP got self-defended, that's a false positive" case, one click on the 🛡️ shield button in the Self-Defense tab — or one manual whitelist add — both whitelists the IP *and* clears the existing block in a single operation.
+
+Each row in the whitelist table shows a **skips/30d** counter (rolling 30-day window) so you can see which entries are doing actual work and prune the dead ones later.
+
+#### Manual self-defense controls
+
+The Self-Defense tab also has three per-row buttons for ad-hoc operator action:
+
+- 🗑️ **Trash** — drop just this self-defense entry without permabanning it (false-positive recovery).
+- 🛡️ **Shield** — move the IP to the whitelist (also lifts the self-defense + any existing perma-block entry).
+- ⚡ **Bolt** — promote to Perma-Block (existing).
+
+A red **Clear all** button at the top of the Self-Defense tab wipes every active entry in one shot (confirm required). Use this when several false positives slipped through at once. Real attackers will be re-added on the next reporter run, so this is safe during recovery.
 
 ### Statistics
 
