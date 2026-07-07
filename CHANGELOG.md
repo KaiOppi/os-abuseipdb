@@ -3,6 +3,16 @@
 All notable changes to this project are documented here.
 The format roughly follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project uses [Semantic Versioning](https://semver.org/).
 
+## [0.10.0] — 2026-07-07
+
+### Changed
+- **Blacklist history window raised from 30 to 365 runs (Constantin's request, [#5](https://github.com/KaiOppi/os-abuseipdb/issues/5)).** In union / intersection mode the plugin keeps up to N past download snapshots and derives the active pf-alias from them. The old cap of 30 was only ~7.5 days at the common 6 h sync interval — too short to build a meaningful reputation window. `history_size` and the matching `history_threshold` now accept up to **365** (about 3 months at 6 h sync, or ~1 month at a 20-minute interval). Defaults are unchanged (N=7, M=4), so existing setups behave exactly as before.
+- **GUI help note about DB size.** The *History size* field now spells out the storage impact (`N × max_ips × ~30 bytes`) with worked examples — 7 × 10k ≈ 6 MB, 120 × 10k ≈ 34 MB (~30 days), 365 × 10k ≈ 105 MB — so operators can pick a retention window with eyes open.
+
+### Not changed / declined
+- **Reporting IPs that were blocked by the AbuseIPDB blacklist rule itself** (also requested in [#5](https://github.com/KaiOppi/os-abuseipdb/issues/5)) is intentionally **not** implemented. It would violate the [AbuseIPDB reporting policy](https://www.abuseipdb.com/reporting-policy) (a block that only happened because of AbuseIPDB's own confidence score is circular reporting; pf drops the SYN before any TCP handshake completes, and UDP is not reportable at all). Hits on any non-`[os-abuseipdb]` rule — i.e. genuine independent evidence — are still reported as before, so no legitimate report is lost. See the issue thread for the full reasoning.
+- No schema change: `history_size` / `history_threshold` are existing fields, only their upper validation bound moved. Settings model stays at 0.1.7.
+
 ## [0.9.0] — 2026-05-22
 
 ### Added

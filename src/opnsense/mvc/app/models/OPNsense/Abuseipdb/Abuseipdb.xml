@@ -72,13 +72,13 @@
             </history_mode>
             <history_size type="IntegerField">
                 <MinimumValue>2</MinimumValue>
-                <MaximumValue>30</MaximumValue>
+                <MaximumValue>365</MaximumValue>
                 <default>7</default>
                 <Required>Y</Required>
             </history_size>
             <history_threshold type="IntegerField">
                 <MinimumValue>1</MinimumValue>
-                <MaximumValue>30</MaximumValue>
+                <MaximumValue>365</MaximumValue>
                 <default>4</default>
                 <Required>Y</Required>
             </history_threshold>

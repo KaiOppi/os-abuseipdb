@@ -39,7 +39,7 @@
         <id>abuseipdb.blacklist.history_size</id>
         <label>History size (N runs)</label>
         <type>text</type>
-        <help>How many of the last download snapshots to keep, when History mode is union or intersection. Default 7. Each snapshot keeps up to "Maximum number of IPs" rows, so peak DB size is roughly N × max_ips × 30 bytes (e.g. 7 × 10k ≈ 6 MB).</help>
+        <help>How many of the last download snapshots to keep, when History mode is union or intersection. Default 7, max 365 (about 3 months at a 6 h sync interval). Each snapshot keeps up to "Maximum number of IPs" rows, so peak DB size is roughly N × max_ips × 30 bytes: 7 × 10k ≈ 6 MB, 120 × 10k ≈ 34 MB (~30 days at 6 h), 365 × 10k ≈ 105 MB. Raise gradually if you use a large IP cap.</help>
     </field>
     <field>
         <id>abuseipdb.blacklist.history_threshold</id>
