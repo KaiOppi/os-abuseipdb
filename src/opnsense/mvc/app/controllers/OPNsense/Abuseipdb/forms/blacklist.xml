@@ -6,16 +6,22 @@
         <help>Enable automatic download of the AbuseIPDB blacklist into the pf table.</help>
     </field>
     <field>
+        <id>abuseipdb.blacklist.account_tier</id>
+        <label>AbuseIPDB account type</label>
+        <type>dropdown</type>
+        <help>Your AbuseIPDB subscription tier. On a free account the blacklist endpoint ignores the confidence minimum and caps the list at 10,000 IPs, so those two fields below are locked to avoid confusion. Choose Paid only if your account actually supports custom confidence and larger lists — otherwise the extra settings have no effect.</help>
+    </field>
+    <field>
         <id>abuseipdb.blacklist.confidence_min</id>
         <label>Minimum confidence score</label>
         <type>text</type>
-        <help>Only IPs with at least this confidence score (25-100) are included. 90 = high-quality hits only.</help>
+        <help>Only IPs with at least this confidence score (25-100) are included. 90 = high-quality hits only. Paid accounts only — free accounts always use the API default.</help>
     </field>
     <field>
         <id>abuseipdb.blacklist.max_ips</id>
         <label>Maximum number of IPs</label>
         <type>text</type>
-        <help>Upper limit on IPs pulled per run. Free-tier supports 10,000.</help>
+        <help>Upper limit on IPs pulled per run. Free accounts are fixed at 10,000; raise this only on a paid account (up to 500,000).</help>
     </field>
     <field>
         <id>abuseipdb.blacklist.include_ipv6</id>

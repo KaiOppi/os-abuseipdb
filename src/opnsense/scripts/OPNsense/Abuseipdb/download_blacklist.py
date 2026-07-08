@@ -25,11 +25,17 @@ except ImportError:
     die("Python requests library missing (install py311-requests).")
 
 
-def _fetch_one(api_key: str, confidence_min: int, limit: int,
+def _fetch_one(api_key: str, confidence_min: int | None, limit: int,
                ip_version: int | None) -> tuple[list[str], int | None]:
     """One call to /blacklist. `ip_version` None = whatever the API defaults to
-    (in practice IPv4-only). Pass 4 or 6 to scope explicitly."""
-    params = {"confidenceMinimum": confidence_min, "limit": limit}
+    (in practice IPv4-only). Pass 4 or 6 to scope explicitly.
+
+    `confidence_min` None means don't send confidenceMinimum at all — used for
+    free-tier accounts, where the API ignores it anyway (fixed at its own
+    default) and sending it just invites confusion."""
+    params = {"limit": limit}
+    if confidence_min is not None:
+        params["confidenceMinimum"] = confidence_min
     if ip_version in (4, 6):
         params["ipVersion"] = ip_version
     r = requests.get(
@@ -50,7 +56,7 @@ def _fetch_one(api_key: str, confidence_min: int, limit: int,
     return ips, quota_i
 
 
-def fetch_blacklist(api_key: str, confidence_min: int, limit: int,
+def fetch_blacklist(api_key: str, confidence_min: int | None, limit: int,
                     include_ipv6: bool) -> tuple[list[str], int | None]:
     """Return (ip_list, quota_remaining). Raises on non-2xx for the IPv4 call;
     a failure on the optional IPv6 call is soft (logged via the eventual
@@ -300,8 +306,21 @@ def main() -> int:
     history_size = int(cfg["blacklist"].get("history_size", "7"))
     history_threshold = int(cfg["blacklist"].get("history_threshold", "4"))
 
-    log(f"starting blacklist fetch (confidence={conf_min}, limit={max_ips}, "
-        f"include_ipv6={include_ipv6}, persist_days={persist_days}, "
+    # Free AbuseIPDB accounts can't set a confidence minimum and are capped at
+    # 10k rows — the API ignores confidenceMinimum and clamps limit anyway. We
+    # honour that server-side so the setting matches reality (issue #6): drop
+    # confidenceMinimum from the call and cap the limit ourselves.
+    account_tier = cfg["blacklist"].get("account_tier", "free")
+    if account_tier == "free":
+        conf_min = None
+        if max_ips > 10000:
+            max_ips = 10000
+        conf_log = "free-plan default"
+    else:
+        conf_log = str(conf_min)
+
+    log(f"starting blacklist fetch (tier={account_tier}, confidence={conf_log}, "
+        f"limit={max_ips}, include_ipv6={include_ipv6}, persist_days={persist_days}, "
         f"history_mode={history_mode}, history_size={history_size}, "
         f"history_threshold={history_threshold})")
     try:

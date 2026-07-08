@@ -365,6 +365,18 @@
                             'frm_selfcare': "/api/abuseipdb/settings/get",
                             'frm_permaban': "/api/abuseipdb/settings/get"};
 
+        // Free AbuseIPDB accounts can't set a confidence minimum and are
+        // capped at 10k IPs, so lock those two fields when tier == free
+        // (issue #6). readonly (not disabled) keeps the stored values in the
+        // POST, so switching back to paid restores the user's numbers.
+        function applyTierUI() {
+            var isFree = ($("#abuseipdb\\.blacklist\\.account_tier").val() === "free");
+            $("#abuseipdb\\.blacklist\\.confidence_min, #abuseipdb\\.blacklist\\.max_ips")
+                .prop("readonly", isFree)
+                .css({"background-color": isFree ? "#eeeeee" : "",
+                      "cursor": isFree ? "not-allowed" : ""});
+        }
+
         mapDataToFormUI(data_get_map).done(function(){
             updateServiceControlUI('abuseipdb');
             var val = ($("#abuseipdb\\.blacklist\\.block_interfaces").val() || "wan").trim() || "wan";
@@ -372,7 +384,9 @@
             $("#jumpToRule").attr("href",
                 parts.length > 1 ? "/ui/firewall/filter#floating"
                                  : "/ui/firewall/filter#" + (parts[0] || "wan"));
+            applyTierUI();
         });
+        $(document).on("change", "#abuseipdb\\.blacklist\\.account_tier", applyTierUI);
 
         function saveAll() {
             // Save all four forms in ONE request. Previously we chained

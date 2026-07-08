@@ -3,6 +3,17 @@
 All notable changes to this project are documented here.
 The format roughly follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project uses [Semantic Versioning](https://semver.org/).
 
+## [0.11.0] — 2026-07-08
+
+### Added
+- **AbuseIPDB account type selector (Free / Paid) on the Blacklist tab ([#6](https://github.com/KaiOppi/os-abuseipdb/issues/6)).** Free AbuseIPDB accounts can't set a confidence minimum and are capped at 10,000 blacklist rows — the API silently ignores `confidenceMinimum` and clamps the limit. Setting *Free* (the new default) now makes that explicit:
+  - **UI:** the *Minimum confidence score* and *Maximum number of IPs* fields are locked (read-only, greyed) so nobody tunes knobs that have no effect. They stay populated, so switching to *Paid* restores your values.
+  - **Backend:** the download no longer sends `confidenceMinimum` on a free account and clamps the limit to 10,000 server-side, matching what AbuseIPDB actually does.
+  - *Paid* unlocks both fields (custom confidence, up to 500,000 IPs) for accounts that support it.
+
+### Schema
+- New `blacklist.account_tier` option field (`free` default / `paid`). Settings model bumped 0.1.7 → 0.1.8. Additive — existing installs default to *free*, which reproduces the previous 10k/default-confidence behaviour exactly.
+
 ## [0.10.0] — 2026-07-07
 
 ### Changed

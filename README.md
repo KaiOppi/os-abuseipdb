@@ -13,7 +13,7 @@ OPNsense plugin for bidirectional [AbuseIPDB](https://www.abuseipdb.com) integra
 - **Dashboard widget** — live stats (blocklist size, last download, quota, reports, self-defense active/total, perma-block size, whitelist size).
 - **Fire & forget** — cron jobs are created automatically when you enable the feature (daily download, 5-minute reporter cycles, hourly self-defense cleanup, daily perma-block sweep, 5-minute hit-counter sampler).
 
-> **Status:** public beta (v0.10.0). Running in production on four OPNsense boxes. Looking for community testers — please open an issue or a r/opnsense reply with feedback.
+> **Status:** public beta (v0.11.0). Running in production on four OPNsense boxes. Looking for community testers — please open an issue or a r/opnsense reply with feedback.
 
 ## Screenshots
 
@@ -51,7 +51,7 @@ pkg install -y py313-requests   # for Python 3.13 (OPNsense 26.1.5+)
 # pkg install -y py311-requests # for older 26.1.x
 
 # 2. Install the plugin
-pkg add https://github.com/KaiOppi/os-abuseipdb/releases/download/v0.10.0/os-abuseipdb-0.10.0.pkg
+pkg add https://github.com/KaiOppi/os-abuseipdb/releases/download/v0.11.0/os-abuseipdb-0.11.0.pkg
 ```
 
 Then go to **Firewall → AbuseIPDB**. The post-install hook flushes the
@@ -90,8 +90,9 @@ On save the following is created automatically:
 - Cron job: daily download at 03:13
 
 Default values (configurable):
-- `Minimum confidence score` — 90 (only high-quality hits)
-- `Maximum number of IPs` — 10000 (free-tier per-call limit)
+- `AbuseIPDB account type` — **Free** (default) or **Paid**. On a free account the blacklist endpoint ignores the confidence minimum and caps the list at 10,000 IPs, so the two fields below are locked (read-only) to avoid confusion; the download also skips sending `confidenceMinimum` and clamps the limit to 10k server-side. Switch to **Paid** only if your account supports custom confidence and larger lists.
+- `Minimum confidence score` — 90 (only high-quality hits). *Paid accounts only.*
+- `Maximum number of IPs` — 10000 (free-tier per-call limit; up to 500,000 on paid)
 - `Block on interface(s)` — WAN. Accepts either the internal identifier (`wan`, `opt1`, ...) or the friendly name from Interfaces → Assignments (`WAN`, `DSL`, ...). Multiple comma-separated entries turn the rule into a floating rule on the listed interfaces (multi-WAN / failover).
 
 ### Reporter

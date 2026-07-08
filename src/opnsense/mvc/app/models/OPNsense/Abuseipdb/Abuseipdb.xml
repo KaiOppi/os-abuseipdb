@@ -1,7 +1,7 @@
 <model>
     <mount>//OPNsense/Abuseipdb</mount>
     <description>AbuseIPDB plugin configuration</description>
-    <version>0.1.7</version>
+    <version>0.1.8</version>
     <items>
         <general>
             <enabled type="BooleanField">
@@ -39,6 +39,14 @@
                 <default>0</default>
                 <Required>Y</Required>
             </enabled>
+            <account_tier type="OptionField">
+                <Required>Y</Required>
+                <Default>free</Default>
+                <OptionValues>
+                    <free>Free — blacklist fixed at 10k IPs, no confidence control</free>
+                    <paid>Paid — custom confidence minimum and up to 500k IPs</paid>
+                </OptionValues>
+            </account_tier>
             <confidence_min type="IntegerField">
                 <MinimumValue>25</MinimumValue>
                 <MaximumValue>100</MaximumValue>

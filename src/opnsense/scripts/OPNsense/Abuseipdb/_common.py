@@ -28,6 +28,7 @@ DEFAULT_CONFIG = {
     "general": {"enabled": "0", "api_key": ""},
     "blacklist": {
         "enabled": "0",
+        "account_tier": "free",
         "confidence_min": "90",
         "max_ips": "10000",
         "include_ipv6": "0",
