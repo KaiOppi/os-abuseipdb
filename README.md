@@ -57,6 +57,27 @@ pkg add https://github.com/KaiOppi/os-abuseipdb/releases/download/v0.11.0/os-abu
 Then go to **Firewall → AbuseIPDB**. The post-install hook flushes the
 WebGUI menu/ACL caches automatically — no logout+login required.
 
+## Upgrading
+
+To move to a newer release, install the new package over the old one with `-f`
+(force). Your settings, cron jobs and firewall aliases live in `config.xml`, so
+they are preserved — you do **not** need to uninstall first:
+
+```sh
+# Replace the version with the latest from the releases page
+pkg add -f https://github.com/KaiOppi/os-abuseipdb/releases/download/v0.11.0/os-abuseipdb-0.11.0.pkg
+```
+
+Notes:
+- Check the version you currently have with `pkg query %v os-abuseipdb`, and the
+  newest one on the [releases page](https://github.com/KaiOppi/os-abuseipdb/releases).
+- The Python dependency (`py311-requests` / `py313-requests`) is a one-time
+  install — it stays across upgrades, so you don't need to reinstall it.
+- Same Suricata caveat as above: if you run `os-suricata`, `service suricata stop`
+  before the `pkg add -f`, then `service suricata onestart` afterwards.
+- If the GUI still looks like the old version after upgrading, hard-refresh the
+  page (Ctrl-F5 / Cmd-Shift-R) to clear the browser cache.
+
 ## Configuration
 
 ### General
