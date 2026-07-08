@@ -93,6 +93,11 @@ Default values (configurable):
 - `AbuseIPDB account type` — **Free** (default) or **Paid**. On a free account the blacklist endpoint ignores the confidence minimum and caps the list at 10,000 IPs, so the two fields below are locked (read-only) to avoid confusion; the download also skips sending `confidenceMinimum` and clamps the limit to 10k server-side. Switch to **Paid** only if your account supports custom confidence and larger lists.
 - `Minimum confidence score` — 90 (only high-quality hits). *Paid accounts only.*
 - `Maximum number of IPs` — 10000 (free-tier per-call limit; up to 500,000 on paid)
+- `Include IPv6 entries` — off by default. The AbuseIPDB blacklist endpoint returns IPv4 only; enable this to make a second explicit IPv6 call and merge both families into the pf table. Costs one extra blacklist quota slot per run.
+- `Persist days` — 0 (off). Legacy v0.7 retention: keep every IP for N days from first sight, even after it drops out of the daily top-N. Superseded by History mode below — leave at 0 unless an existing setup relies on it.
+- `History mode` — **Off** (default), **Union**, or **Intersection**. *Off*: each download replaces the alias with today's list. *Union*: keep every IP seen across the last N downloads (sliding window, same effect as Persist days but bounded). *Intersection*: only include IPs that appear in at least M of the last N downloads — reputation-filtered, smallest alias, lowest false-positive rate.
+- `History size (N)` — number of past download snapshots kept in union/intersection mode. Default 7, up to **365** (~3 months at a 6 h sync). Peak DB cost ≈ N × max_ips × 30 bytes.
+- `History threshold (M of N)` — intersection mode only: minimum number of snapshots an IP must appear in before it enters the alias. Default 4; set close to N for the strictest filter.
 - `Block on interface(s)` — WAN. Accepts either the internal identifier (`wan`, `opt1`, ...) or the friendly name from Interfaces → Assignments (`WAN`, `DSL`, ...). Multiple comma-separated entries turn the rule into a floating rule on the listed interfaces (multi-WAN / failover).
 
 ### Reporter
@@ -109,6 +114,7 @@ Default values:
 - `Rate limit per IP (min)` — 15 (max one report per IP per window)
 - `Daily report quota` — 900 (below the free-tier 1000-per-day limit)
 - `Default categories` — `14,15` (PortScan + Hacking)
+- `Report comment template` — text sent with each report, with placeholders `{count}` `{protos}` `{ports}` `{iface}` `{src_ip}`. Defaults to `Blocked by os-abuseipdb; {count} hits, proto={protos}, ports={ports}` (trimmed to 1000 chars; falls back to the default on a bad template).
 
 > **Note:** IPs blocked by the plugin's own blacklist rule are **not** reported back (that would be circular reporting).
 
@@ -268,10 +274,15 @@ pkg remove os-abuseipdb
 - [x] Perma-Block — auto-promote repeat offenders that come back after their Self-Defense TTL
 - [x] Per-IP hit counter on the Perma-Block list, reboot-safe (cumulative pf-counter total + last-hit timestamp)
 - [x] Configurable rule style — classic `<filter><rule>` / Automation Filter model / none, with auto-cleanup on style switch and a "manage block rules on save" toggle for full manual control
+- [x] IPv6 support across reporter, blacklist and perma-block (v0.6.0)
+- [x] Persistent blacklist with TTL + configurable report comment template (v0.7.0)
+- [x] Blacklist snapshot rotation (union / intersection reputation filter), per-endpoint API quota tracking, IPv4/IPv6 stacked stats (v0.8.0)
+- [x] Operator whitelist + manual self-defense removal (v0.9.0)
+- [x] Blacklist history window up to 365 snapshots (v0.10.0)
+- [x] Free / Paid AbuseIPDB account selector (v0.11.0)
 
 **Open:**
 - [ ] Rule-to-category mapping UI (currently default categories only)
-- [x] IPv6 support in the reporter (v0.6.0)
 - [ ] German translation (deferred to the Community Crowdin workflow)
 
 **Later / post-1.0:**
