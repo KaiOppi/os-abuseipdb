@@ -13,7 +13,7 @@ OPNsense plugin for bidirectional [AbuseIPDB](https://www.abuseipdb.com) integra
 - **Dashboard widget** — live stats (blocklist size, last download, quota, reports, self-defense active/total, perma-block size, whitelist size).
 - **Fire & forget** — cron jobs are created automatically when you enable the feature (daily download, 5-minute reporter cycles, hourly self-defense cleanup, daily perma-block sweep, 5-minute hit-counter sampler).
 
-> **Status:** public beta (v0.11.0). Running in production on four OPNsense boxes. Looking for community testers — please open an issue or a r/opnsense reply with feedback.
+> **Status:** public beta (v0.11.2). Running in production on several OPNsense boxes (26.1 / FreeBSD 14 and 26.7 / FreeBSD 15). Looking for community testers — please open an issue or a r/opnsense reply with feedback.
 
 ## Screenshots
 
@@ -41,31 +41,80 @@ OPNsense plugin for bidirectional [AbuseIPDB](https://www.abuseipdb.com) integra
 >
 > Boxes without Suricata are unaffected.
 
-In the OPNsense shell (Console → option 8):
+In the OPNsense shell (Console → option 8), first install the Python dependency
+(needed by **both** methods below):
 
 ```sh
-# 1. Install the Python dependency. The package name depends on the Python
-#    version on your OPNsense: 26.1 LTS uses py311, newer builds py313.
-#    Check with: python3 -c 'import sys;print(f"py{sys.version_info[0]}{sys.version_info[1]}-requests")'
+# The package name depends on the Python version on your OPNsense:
+# 26.1 LTS uses py311, newer builds py313.
+# Check with: python3 -c 'import sys;print(f"py{sys.version_info[0]}{sys.version_info[1]}-requests")'
 pkg install -y py313-requests   # for Python 3.13 (OPNsense 26.1.5+)
 # pkg install -y py311-requests # for older 26.1.x
-
-# 2. Install the plugin
-pkg add https://github.com/KaiOppi/os-abuseipdb/releases/download/v0.11.0/os-abuseipdb-0.11.0.pkg
 ```
+
+### Method A — it-service-nf plugin repository *(recommended)*
+
+Add the signed repository once; after that you install and update os-abuseipdb
+straight from the OPNsense plugin manager (**System → Firmware → Plugins**) or
+`pkg upgrade`, and it shows up as a properly managed plugin.
+
+```sh
+# One-time: add the repository (installs the public key + repo config, runs pkg update)
+fetch -o - https://pkg.itsnf.de/bootstrap.sh | sh
+
+# Install (or do it from System → Firmware → Plugins in the GUI)
+pkg install -y os-abuseipdb
+```
+
+<details><summary>What the bootstrap does (manual equivalent)</summary>
+
+```sh
+fetch -o /usr/local/etc/pkg/itsnf.pub https://pkg.itsnf.de/latest/itsnf.pub
+cat > /usr/local/etc/pkg/repos/itsnf.conf <<'EOF'
+itsnf: {
+  url: "https://pkg.itsnf.de/latest",
+  signature_type: "pubkey",
+  pubkey: "/usr/local/etc/pkg/itsnf.pub",
+  priority: 5,
+  enabled: yes
+}
+EOF
+pkg update
+```
+
+The repository catalogue is RSA-signed; pkg verifies it against the public key
+you just installed. The repository currently serves this plugin (and other
+it-service-nf OPNsense plugins).
+</details>
+
+### Method B — direct package *(no external repository)*
+
+```sh
+pkg add https://github.com/KaiOppi/os-abuseipdb/releases/download/v0.11.2/os-abuseipdb-0.11.2.pkg
+```
+
+Since v0.11.2 the plugin self-registers on install, so this method also lands as
+a properly registered plugin in the GUI (no *misconfigured* flag).
+
+---
 
 Then go to **Firewall → AbuseIPDB**. The post-install hook flushes the
 WebGUI menu/ACL caches automatically — no logout+login required.
 
 ## Upgrading
 
-To move to a newer release, install the new package over the old one with `-f`
-(force). Your settings, cron jobs and firewall aliases live in `config.xml`, so
-they are preserved — you do **not** need to uninstall first:
+If you installed via the **repository (Method A)**, just upgrade normally —
+`pkg upgrade os-abuseipdb`, or **System → Firmware** in the GUI, which offers the
+new version automatically.
+
+If you installed via the **direct package (Method B)**, install the new package
+over the old one with `-f` (force). Your settings, cron jobs and firewall aliases
+live in `config.xml`, so they are preserved — you do **not** need to uninstall
+first:
 
 ```sh
 # Replace the version with the latest from the releases page
-pkg add -f https://github.com/KaiOppi/os-abuseipdb/releases/download/v0.11.0/os-abuseipdb-0.11.0.pkg
+pkg add -f https://github.com/KaiOppi/os-abuseipdb/releases/download/v0.11.2/os-abuseipdb-0.11.2.pkg
 ```
 
 Notes:
@@ -301,6 +350,8 @@ pkg remove os-abuseipdb
 - [x] Operator whitelist + manual self-defense removal (v0.9.0)
 - [x] Blacklist history window up to 365 snapshots (v0.10.0)
 - [x] Free / Paid AbuseIPDB account selector (v0.11.0)
+- [x] Architecture-agnostic package — one build for FreeBSD 14 (26.1) and FreeBSD 15 (26.7) (v0.11.1)
+- [x] Registers as a managed OPNsense plugin + signed pkg repository (`pkg.itsnf.de`) for GUI install/updates (v0.11.2)
 
 **Open:**
 - [ ] Rule-to-category mapping UI (currently default categories only)

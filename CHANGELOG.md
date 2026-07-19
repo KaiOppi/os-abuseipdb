@@ -3,6 +3,19 @@
 All notable changes to this project are documented here.
 The format roughly follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project uses [Semantic Versioning](https://semver.org/).
 
+## [0.11.2] — 2026-07-19
+
+### Fixed
+- **Plugin now registers as a managed plugin — no more "misconfigured" in the firmware GUI.** OPNsense marks a plugin as *configured* only when its name is listed in `config.xml → system/firmware/plugins`, and its `register.php` only ever registers a plugin that ships a `/usr/local/opnsense/version/<name>` metadata file. os-abuseipdb never shipped that file, so it could **never** be registered — the plugin list showed it as *misconfigured* regardless of how it was installed (even through the plugin manager). The package now ships `/usr/local/opnsense/version/abuseipdb` and self-registers in the post-install hook (`register.php install`), so a plain `pkg add`, a `pkg install`, and a plugin-manager install all leave it correctly registered. Upgrading an existing install fixes it automatically; to fix an older install without upgrading, run `configctl firmware resync`. **Packaging/metadata only — no functional code change vs 0.11.1.**
+
+### Packaging
+- **Available from the it-service-nf plugin repository (`pkg.itsnf.de`).** You can now add a signed pkg repository and install/update the plugin straight from the OPNsense plugin manager or `pkg upgrade`, instead of a manual `pkg add`. See the README → Installation for the one-time setup. The direct GitHub-release `pkg add` method still works unchanged.
+
+## [0.11.1] — 2026-07-19
+
+### Fixed
+- **Architecture-agnostic package — installs cleanly on OPNsense 26.7 / FreeBSD 15.** The package was built as `FreeBSD:14:amd64`, so on OPNsense 26.7 (FreeBSD 15) `pkg add` rejected it with *"wrong architecture: FreeBSD:14:amd64 instead of FreeBSD:15:amd64"* (installable only with `-f`). Since the plugin ships only Python/PHP/XML/JS with no compiled binaries, the package is now built with a wildcard ABI/arch (`FreeBSD:*:*`), so a single package installs without `-f` on 26.1 (FreeBSD 14) and 26.7 (FreeBSD 15) alike. **Packaging metadata only — no code change vs 0.11.0.**
+
 ## [0.11.0] — 2026-07-08
 
 ### Added

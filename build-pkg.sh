@@ -5,8 +5,13 @@
 set -eu
 
 NAME=os-abuseipdb
-VERSION=0.11.0
-ARCH=FreeBSD:14:amd64
+VERSION=0.11.2
+# The plugin ships only Python/PHP/XML/JS — no compiled binaries — so it is
+# architecture- and FreeBSD-version-independent. Building it as FreeBSD:14:amd64
+# made `pkg add` reject it with "wrong architecture" on OPNsense 26.7 (FreeBSD
+# 15). A wildcard ABI/arch makes one package install cleanly on 26.1 (FreeBSD
+# 14) and 26.7 (FreeBSD 15) alike, without needing -f. (issue: arch mismatch)
+ARCH=FreeBSD:*:*
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 OUT="$ROOT/dist"
@@ -54,6 +59,27 @@ chmod +x "$STAGE/usr/local/opnsense/scripts/OPNsense/Abuseipdb/"*.py \
          "$STAGE/usr/local/opnsense/scripts/OPNsense/Abuseipdb/"*.sh \
          "$STAGE/usr/local/etc/rc.syshook.d/start/20-abuseipdb"
 # PHP scripts shouldn't be +x (they're invoked through php)
+
+# OPNsense plugin-registry metadata. register.php (run by the firmware
+# install/resync flow AND by our post-install hook below) only registers a
+# plugin that ships a bare-named version file here whose product_id matches.
+# Without this file OPNsense can never record the plugin in
+# config.xml -> system/firmware/plugins, so the GUI shows it as
+# "misconfigured"/"falsch konfiguriert" no matter how it was installed
+# (pkg add, pkg install, or the plugin manager). This is THE fix for that.
+mkdir -p "$STAGE/usr/local/opnsense/version"
+cat > "$STAGE/usr/local/opnsense/version/abuseipdb" <<EOF
+{
+    "product_abi": "26.1",
+    "product_arch": "amd64",
+    "product_email": "info@it-service-nf.de",
+    "product_id": "$NAME",
+    "product_name": "abuseipdb",
+    "product_tier": "3",
+    "product_version": "$VERSION",
+    "product_website": "https://github.com/KaiOppi/os-abuseipdb"
+}
+EOF
 
 # Manifest
 cat > "$ROOT/work/+MANIFEST" <<EOF
@@ -113,6 +139,15 @@ fi
 # notes.)
 service configd restart 2>/dev/null || true
 
+# Register in the OPNsense plugin registry (config.xml system/firmware/plugins)
+# so the firmware GUI treats it as a managed plugin instead of showing
+# "misconfigured". OPNsense normally records this only for plugins installed
+# through its own firmware flow; a bare `pkg add` skips it. register.php is
+# idempotent and relies on the version/abuseipdb metadata shipped in this pkg.
+if [ -x /usr/local/opnsense/scripts/firmware/register.php ]; then
+    /usr/local/opnsense/scripts/firmware/register.php install os-abuseipdb >/dev/null 2>&1 || true
+fi
+
 # Invalidate webgui menu/ACL/model caches so the new menu entry shows up
 # without the user having to log out + back in. This is what the OPNsense core
 # helper does internally (system_cache_flush() — clears MenuSystem, ACL and
@@ -131,6 +166,11 @@ EOF
 cat > "$ROOT/work/+POST_DEINSTALL" <<'EOF'
 #!/bin/sh
 # keep /var/db/abuseipdb so reinstall keeps history; admin can rm -rf manually
+# Unregister from the OPNsense plugin registry (version file is gone by now, so
+# register.php remove drops it from config.xml system/firmware/plugins).
+if [ -x /usr/local/opnsense/scripts/firmware/register.php ]; then
+    /usr/local/opnsense/scripts/firmware/register.php remove os-abuseipdb >/dev/null 2>&1 || true
+fi
 # Invalidate caches so the now-removed menu entry disappears immediately.
 /usr/local/etc/rc.configure_plugins POST_DEINSTALL >/dev/null 2>&1 || true
 :
