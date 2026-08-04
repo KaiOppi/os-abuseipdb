@@ -1,0 +1,38 @@
+<form>
+    <field>
+        <id>abuseipdb.suricata.enabled</id>
+        <label>Suricata reporter enabled</label>
+        <type>checkbox</type>
+        <help>Report attacker IPs seen in Suricata IDS/IPS alerts to AbuseIPDB, in addition to the firewall-log reporter. Requires Suricata EVE JSON logging (Services: Intrusion Detection: Administration: enable "EVE"). Submit-safety options (dry-run, pre-check, per-IP rate limit, daily quota) are shared with the Reporter tab.</help>
+    </field>
+    <field>
+        <id>abuseipdb.suricata.eve_log</id>
+        <label>EVE log path</label>
+        <type>text</type>
+        <help>Absolute path to the Suricata EVE JSON log. Default /var/log/suricata/eve.json — change only if you moved it.</help>
+    </field>
+    <field>
+        <id>abuseipdb.suricata.min_severity</id>
+        <label>Minimum alert priority</label>
+        <type>text</type>
+        <help>Lowest Suricata priority level to include: 1 = high only, 2 = high + medium (default), 3 = everything (also low-severity/policy rules — noisy). An alert is kept when its severity number is at most this value.</help>
+    </field>
+    <field>
+        <id>abuseipdb.suricata.min_hits</id>
+        <label>Minimum alerts before report</label>
+        <type>text</type>
+        <help>Number of alerts from an IP within one run before it is reported. 1 = report on the first alert. Raise to suppress single, isolated hits.</help>
+    </field>
+    <field>
+        <id>abuseipdb.suricata.default_categories</id>
+        <label>Fallback categories</label>
+        <type>text</type>
+        <help>Comma-separated AbuseIPDB category IDs used when an alert's Suricata classtype can't be mapped automatically. Known classtypes map on their own (scan→14, web attack→21, brute force→18, SQLi→16, trojan→15+20, …). 15=Hacking is a safe default.</help>
+    </field>
+    <field>
+        <id>abuseipdb.suricata.comment_template</id>
+        <label>Comment template</label>
+        <type>text</type>
+        <help>Text submitted as the report comment. Placeholders: {count}, {signatures}, {categories}, {ports}, {protos}, {iface}, {src_ip}. Max 1000 chars after substitution (API limit 1024).</help>
+    </field>
+</form>

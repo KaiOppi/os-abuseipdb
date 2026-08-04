@@ -1,7 +1,7 @@
 <model>
     <mount>//OPNsense/Abuseipdb</mount>
     <description>AbuseIPDB plugin configuration</description>
-    <version>0.1.8</version>
+    <version>0.1.9</version>
     <items>
         <general>
             <enabled type="BooleanField">
@@ -176,5 +176,41 @@
                 <Required>Y</Required>
             </precheck_min_confidence>
         </reporter>
+        <suricata>
+            <enabled type="BooleanField">
+                <default>0</default>
+                <Required>Y</Required>
+            </enabled>
+            <eve_log type="TextField">
+                <Mask>/^\/[A-Za-z0-9_\-\.\/]{1,200}$/u</Mask>
+                <ValidationMessage>Absolute path to the Suricata EVE JSON log.</ValidationMessage>
+                <default>/var/log/suricata/eve.json</default>
+                <Required>Y</Required>
+            </eve_log>
+            <min_hits type="IntegerField">
+                <MinimumValue>1</MinimumValue>
+                <MaximumValue>1000</MaximumValue>
+                <default>1</default>
+                <Required>Y</Required>
+            </min_hits>
+            <min_severity type="IntegerField">
+                <MinimumValue>1</MinimumValue>
+                <MaximumValue>3</MaximumValue>
+                <default>2</default>
+                <Required>Y</Required>
+            </min_severity>
+            <default_categories type="TextField">
+                <Mask>/^[0-9,\s]*$/u</Mask>
+                <ValidationMessage>Comma-separated AbuseIPDB category IDs.</ValidationMessage>
+                <default>15</default>
+                <Required>Y</Required>
+            </default_categories>
+            <comment_template type="TextField">
+                <Mask>/^.{1,500}$/u</Mask>
+                <ValidationMessage>1-500 chars. Placeholders {count}, {signatures}, {categories}, {ports}, {protos}, {iface}, {src_ip}.</ValidationMessage>
+                <default>Suricata IDS on OPNsense: {count} alert(s); {signatures}</default>
+                <Required>Y</Required>
+            </comment_template>
+        </suricata>
     </items>
 </model>

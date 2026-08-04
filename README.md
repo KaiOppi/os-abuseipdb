@@ -4,6 +4,7 @@ OPNsense plugin for bidirectional [AbuseIPDB](https://www.abuseipdb.com) integra
 
 - **Blacklist** — downloads the AbuseIPDB blocklist into a pf table and auto-creates a firewall alias + block rule.
 - **Reporter** — parses the OPNsense firewall log and submits attacker IPs back to AbuseIPDB (bidirectional participation in the threat-intelligence network).
+- **Suricata reporter** — optional second source that submits attacker IPs from Suricata IDS/IPS alerts (EVE JSON log). Only inbound attacks against this host are reported; Suricata classtypes map automatically to AbuseIPDB categories. Shares the reporter's safety settings and daily quota.
 - **Self-Defense** — TTL-based local blocklist populated from reporter submits; closes the gap while AbuseIPDB's community catches up.
 - **Perma-Block** — repeat offenders that come back after their Self-Defense TTL expired get auto-promoted to a permanent block list, with a per-IP hit counter (cumulative across reboots) so you see exactly how often each entry actually triggered.
 - **Whitelist** — operator-managed *never touch* list: whitelisted IPs are excluded from reports, self-defense, perma-block, and the downloaded blacklist. Designed for known-good sources (remote support tools, monitoring, partner networks) that occasionally trip the reporter. Adding an IP automatically lifts any active self-defense or perma-block entry for it.
@@ -13,7 +14,7 @@ OPNsense plugin for bidirectional [AbuseIPDB](https://www.abuseipdb.com) integra
 - **Dashboard widget** — live stats (blocklist size, last download, quota, reports, self-defense active/total, perma-block size, whitelist size).
 - **Fire & forget** — cron jobs are created automatically when you enable the feature (daily download, 5-minute reporter cycles, hourly self-defense cleanup, daily perma-block sweep, 5-minute hit-counter sampler).
 
-> **Status:** public beta (v0.11.2). Running in production on several OPNsense boxes (26.1 / FreeBSD 14 and 26.7 / FreeBSD 15). Looking for community testers — please open an issue or a r/opnsense reply with feedback.
+> **Status:** public beta (v0.12.0). Running in production on several OPNsense boxes (26.1 / FreeBSD 14 and 26.7 / FreeBSD 15). Looking for community testers — please open an issue or a r/opnsense reply with feedback.
 
 ## Screenshots
 
@@ -90,7 +91,7 @@ it-service-nf OPNsense plugins).
 ### Method B — direct package *(no external repository)*
 
 ```sh
-pkg add https://github.com/KaiOppi/os-abuseipdb/releases/download/v0.11.2/os-abuseipdb-0.11.2.pkg
+pkg add https://github.com/KaiOppi/os-abuseipdb/releases/download/v0.12.0/os-abuseipdb-0.12.0.pkg
 ```
 
 Since v0.11.2 the plugin self-registers on install, so this method also lands as
@@ -114,7 +115,7 @@ first:
 
 ```sh
 # Replace the version with the latest from the releases page
-pkg add -f https://github.com/KaiOppi/os-abuseipdb/releases/download/v0.11.2/os-abuseipdb-0.11.2.pkg
+pkg add -f https://github.com/KaiOppi/os-abuseipdb/releases/download/v0.12.0/os-abuseipdb-0.12.0.pkg
 ```
 
 Notes:
@@ -187,6 +188,39 @@ Default values:
 - `Report comment template` — text sent with each report, with placeholders `{count}` `{protos}` `{ports}` `{iface}` `{src_ip}`. Defaults to `Blocked by os-abuseipdb; {count} hits, proto={protos}, ports={ports}` (trimmed to 1000 chars; falls back to the default on a bad template).
 
 > **Note:** IPs blocked by the plugin's own blacklist rule are **not** reported back (that would be circular reporting).
+
+### Suricata reporter
+
+Tab **Suricata** → enable. A second reporting source next to the firewall-log
+reporter: it reads Suricata's EVE JSON log and reports the attacker IPs behind
+IDS/IPS alerts. This is legitimate first-hand evidence (a real detection against
+your host), unlike blacklist hits — so it is fully in scope for AbuseIPDB.
+
+Prerequisite: enable Suricata's EVE JSON output under
+**Services: Intrusion Detection: Administration** (the `eve.json` log).
+
+On save a cron job runs the Suricata reporter every 5 minutes (parses the
+configured EVE log). What gets reported:
+
+- Only **inbound attacks against this box** — an alert's source IP must be
+  public/external *and* its destination must be one of your own addresses
+  (a directly-connected subnet, including the public WAN IP). Outbound traffic,
+  LAN clients (IPv4 and IPv6 GUA) and both-endpoints-external transit are dropped.
+- Suricata classtypes are mapped to AbuseIPDB categories automatically
+  (network scan → 14, web-app attack → 21, SQL injection → 16, brute force → 18,
+  trojan → 15+20, …); unmapped classtypes use the configurable fallback.
+
+Settings:
+- `Minimum alert priority` — 1 = high only, 2 = high+medium (default), 3 = all
+  (also low-severity/policy rules — noisy).
+- `Minimum alerts before report` — 1 (report on the first alert; raise to suppress isolated hits).
+- `Fallback categories` — used only when a classtype can't be mapped (default `15` = Hacking).
+- `Comment template` — placeholders `{count}` `{signatures}` `{categories}` `{ports}` `{protos}` `{iface}` `{src_ip}`.
+
+> The submit-safety settings — **dry-run, pre-check, per-IP rate limit and the
+> daily quota — are shared with the Reporter tab.** Both sources draw from one
+> daily budget and one per-IP dedupe window, and confirmed IPs feed the same
+> Self-Defense / Perma-Block tables. Keep dry-run on for the first 24 h here too.
 
 ### Self-Defense
 
@@ -352,6 +386,7 @@ pkg remove os-abuseipdb
 - [x] Free / Paid AbuseIPDB account selector (v0.11.0)
 - [x] Architecture-agnostic package — one build for FreeBSD 14 (26.1) and FreeBSD 15 (26.7) (v0.11.1)
 - [x] Registers as a managed OPNsense plugin + signed pkg repository (`pkg.itsnf.de`) for GUI install/updates (v0.11.2)
+- [x] Suricata IDS/IPS alerts as a reporting source, with automatic classtype→category mapping (v0.12.0, [#7](https://github.com/KaiOppi/os-abuseipdb/issues/7))
 
 **Open:**
 - [ ] Rule-to-category mapping UI (currently default categories only)
@@ -359,7 +394,7 @@ pkg remove os-abuseipdb
 
 **Later / post-1.0:**
 - [ ] **Service-log integration** — catch attacks against local services (Postfix, sshd, WebGUI brute-force, FTP) by parsing their logs, not just firewall blocks. Optional auto-ban into the pf table so attackers are blocked and reported in one step.
-- [ ] Suricata / Zenarmor integration (alert events as reporting source)
+- [ ] Zenarmor alert events as an additional reporting source
 - [ ] GeoIP enrichment in the log viewer (ASN/country per IP)
 
 ## Changelog

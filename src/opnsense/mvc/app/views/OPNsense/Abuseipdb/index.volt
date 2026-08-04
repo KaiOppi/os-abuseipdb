@@ -87,6 +87,8 @@
                 }
                 $("#stat_reports_today").text(d.reports_today);
                 $("#stat_reports_total").text(d.reports_total);
+                $("#stat_reports_today_suricata").text(d.reports_today_suricata || 0);
+                $("#stat_reports_total_suricata").text(d.reports_total_suricata || 0);
                 $("#stat_selfcare_active").text((d.selfcare_active || 0).toLocaleString());
                 $("#stat_selfcare_total").text((d.selfcare_total || 0).toLocaleString());
                 $("#stat_permaban_count").text((d.permaban_count || 0).toLocaleString());
@@ -335,7 +337,7 @@
                 var rows = resp.data.rows;
                 var tbody = $("#reportsTable tbody").empty();
                 if (rows.length === 0) {
-                    tbody.append('<tr><td colspan="6" style="text-align:center;color:#888;padding:12px">{{ lang._("No reports yet.") }}</td></tr>');
+                    tbody.append('<tr><td colspan="7" style="text-align:center;color:#888;padding:12px">{{ lang._("No reports yet.") }}</td></tr>');
                 } else {
                     rows.forEach(function(r) {
                         // Build the row with jQuery objects so .text(...) escapes
@@ -346,6 +348,12 @@
                         var $tr = $('<tr>');
                         $tr.append($('<td>').text(fmtTs(r.ts)));
                         $tr.append($('<td>').css('white-space', 'nowrap').append($('<tt>').text(r.ip)));
+                        // Source badge: firewall (grey) vs suricata (blue).
+                        var src = r.source || 'firewall';
+                        var $src = $('<span>').text(src === 'suricata' ? 'Suricata' : 'Firewall')
+                            .css({'font-size':'11px','padding':'1px 6px','border-radius':'3px','color':'#fff',
+                                  'background': src === 'suricata' ? '#2980b9' : '#7f8c8d'});
+                        $tr.append($('<td>').append($src));
                         $tr.append($('<td>').text(fmtIface(r.iface)));
                         $tr.append($('<td>').text(r.categories || ''));
                         $tr.append($('<td>').addClass(r.ok ? 'ok' : 'warn').text(r.ok ? 'OK' : 'failed'));
@@ -362,6 +370,7 @@
         var data_get_map = {'frm_general': "/api/abuseipdb/settings/get",
                             'frm_blacklist': "/api/abuseipdb/settings/get",
                             'frm_reporter': "/api/abuseipdb/settings/get",
+                            'frm_suricata': "/api/abuseipdb/settings/get",
                             'frm_selfcare': "/api/abuseipdb/settings/get",
                             'frm_permaban': "/api/abuseipdb/settings/get"};
 
@@ -667,7 +676,12 @@
         </tr>
         <tr>
             <td class="lbl">{{ lang._('Reports today / total') }}</td>
-            <td><span id="stat_reports_today">—</span> / <span id="stat_reports_total">—</span></td>
+            <td><span id="stat_reports_today">—</span> / <span id="stat_reports_total">—</span>
+                <span style="color:#888;font-size:11px;margin-left:8px">
+                    ({{ lang._('Suricata:') }} <span id="stat_reports_today_suricata">—</span> /
+                    <span id="stat_reports_total_suricata">—</span>)
+                </span>
+            </td>
         </tr>
         <tr>
             <td class="lbl">{{ lang._('Self-defense (active / total)') }}</td>
@@ -722,6 +736,7 @@
     <li class="active"><a data-toggle="tab" href="#general">{{ lang._('General') }}</a></li>
     <li><a data-toggle="tab" href="#blacklist">{{ lang._('Blacklist') }}</a></li>
     <li><a data-toggle="tab" href="#reporter">{{ lang._('Reporter') }}</a></li>
+    <li><a data-toggle="tab" href="#suricata">{{ lang._('Suricata') }}</a></li>
     <li><a data-toggle="tab" href="#selfcare">{{ lang._('Self-Defense') }}</a></li>
     <li><a data-toggle="tab" href="#permaban">{{ lang._('Perma-Block') }}</a></li>
     <li><a data-toggle="tab" href="#whitelist">{{ lang._('Whitelist') }}</a></li>
@@ -744,6 +759,14 @@
     </div>
     <div id="reporter" class="tab-pane fade">
         {{ partial("layout_partials/base_form", ['fields': reporterForm, 'id': 'frm_reporter']) }}
+    </div>
+    <div id="suricata" class="tab-pane fade">
+        {{ partial("layout_partials/base_form", ['fields': suricataForm, 'id': 'frm_suricata']) }}
+        <div style="padding:0 15px 15px 15px">
+            <p style="color:#777;font-size:11px;margin-top:6px">
+                {{ lang._('Reports attacker IPs from Suricata IDS/IPS alerts (a second source next to the firewall-log Reporter). Only inbound attacks against this host are reported — outbound traffic and LAN clients are filtered out. Enable EVE JSON logging under Services: Intrusion Detection: Administration. The shared submit-safety settings (dry-run, pre-check, per-IP rate limit, daily quota) live on the Reporter tab.') }}
+            </p>
+        </div>
     </div>
     <div id="selfcare" class="tab-pane fade">
         {{ partial("layout_partials/base_form", ['fields': selfcareForm, 'id': 'frm_selfcare']) }}
@@ -895,6 +918,7 @@
                 <tr>
                     <th>{{ lang._('Time') }}</th>
                     <th>{{ lang._('IP') }}</th>
+                    <th>{{ lang._('Source') }}</th>
                     <th>{{ lang._('Interface') }}</th>
                     <th>{{ lang._('Categories') }}</th>
                     <th>{{ lang._('Result') }}</th>

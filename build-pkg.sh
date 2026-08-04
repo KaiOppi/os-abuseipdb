@@ -5,7 +5,7 @@
 set -eu
 
 NAME=os-abuseipdb
-VERSION=0.11.2
+VERSION=0.12.0
 # The plugin ships only Python/PHP/XML/JS — no compiled binaries — so it is
 # architecture- and FreeBSD-version-independent. Building it as FreeBSD:14:amd64
 # made `pkg add` reject it with "wrong architecture" on OPNsense 26.7 (FreeBSD
@@ -87,7 +87,7 @@ name: $NAME
 version: "$VERSION"
 origin: opnsense/$NAME
 comment: "OPNsense plugin for bidirectional AbuseIPDB integration"
-desc: "AbuseIPDB blacklist downloader and reporter for OPNsense. Automatic pf-table population, firewall alias + WAN block rule, log-based reporter that submits firewall hits back to AbuseIPDB, dashboard widget, daily download and 5-min reporter cron."
+desc: "AbuseIPDB blacklist downloader and reporter for OPNsense. Automatic pf-table population, firewall alias + WAN block rule, log-based reporter that submits firewall hits back to AbuseIPDB, optional Suricata IDS/IPS EVE-log reporting, dashboard widget, daily download and 5-min reporter cron."
 maintainer: info@it-service-nf.de
 www: https://github.com/KaiOppi/os-abuseipdb
 abi: $ARCH

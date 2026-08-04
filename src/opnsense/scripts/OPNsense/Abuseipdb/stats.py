@@ -35,6 +35,8 @@ def main() -> int:
         "quota_remaining": None,
         "reports_today": 0,
         "reports_total": 0,
+        "reports_today_suricata": 0,
+        "reports_total_suricata": 0,
         "selfcare_active": 0,
         "selfcare_total": 0,
         "permaban_count": 0,
@@ -100,6 +102,21 @@ def main() -> int:
         data["reports_today"] = row[0] if row else 0
         row = db.execute("SELECT COUNT(*) FROM reports WHERE ok = 1").fetchone()
         data["reports_total"] = row[0] if row else 0
+
+        # v0.12.0: Suricata-sourced subset (guard for pre-migration DBs).
+        try:
+            row = db.execute(
+                "SELECT COUNT(*) FROM reports WHERE ts >= ? AND ok = 1 AND source = 'suricata'",
+                (midnight,),
+            ).fetchone()
+            data["reports_today_suricata"] = row[0] if row else 0
+            row = db.execute(
+                "SELECT COUNT(*) FROM reports WHERE ok = 1 AND source = 'suricata'"
+            ).fetchone()
+            data["reports_total_suricata"] = row[0] if row else 0
+        except Exception:
+            data["reports_today_suricata"] = 0
+            data["reports_total_suricata"] = 0
 
         now = int(time.time())
         row = db.execute(

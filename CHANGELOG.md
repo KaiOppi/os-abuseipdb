@@ -3,6 +3,20 @@
 All notable changes to this project are documented here.
 The format roughly follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project uses [Semantic Versioning](https://semver.org/).
 
+## [0.12.0] — 2026-08-04
+
+### Added
+- **Suricata IDS/IPS alerts as a second reporting source ([#7](https://github.com/KaiOppi/os-abuseipdb/issues/7)).** A new **Suricata** tab lets the plugin report attacker IPs seen in Suricata's EVE JSON log to AbuseIPDB, in addition to the firewall-log reporter. Unlike reporting AbuseIPDB blacklist hits (which is intentionally *not* done — that would be circular), an IDS alert is your own first-hand detection of malicious behaviour against this host, which is exactly the evidence AbuseIPDB wants.
+  - **Attacker heuristic:** only *inbound* attacks are reported — an alert's source IP must be public/external **and** its destination must be one of your own addresses (a directly-connected subnet, including the public WAN IP). Outbound traffic, LAN clients (v4 and IPv6 GUA), and both-endpoints-external transit are filtered out, reusing the reporter's existing WAN/local-source logic.
+  - **Automatic category mapping:** Suricata classtypes are mapped to AbuseIPDB category IDs (network scan → 14, web-app attack → 21, SQL injection → 16, brute force → 18, trojan → 15+20, …), with a configurable fallback for unmapped classtypes.
+  - **Severity floor:** choose the lowest alert priority to include (1 = high only, 2 = high+medium, default; 3 = everything).
+  - **Shared safety machinery:** dry-run, pre-check, per-IP rate limit and the daily quota are shared with the firewall Reporter (one budget, one dedupe), and confirmed IPs feed the same self-defense / perma-block tables.
+  - Runs on its own 5-minute cron when enabled. Requires Suricata EVE JSON logging (*Services: Intrusion Detection: Administration*).
+- **Source column in the Log tab** — each report row is now tagged **Firewall** or **Suricata**, and the status banner shows a Suricata report count (today / total).
+
+### Schema
+- New `suricata` section (enabled, eve_log, min_hits, min_severity, default_categories, comment_template). Settings model bumped 0.1.8 → 0.1.9. Additive `source` column on the `reports` table (existing rows default to `firewall`). Existing installs are unaffected until the Suricata reporter is explicitly enabled.
+
 ## [0.11.2] — 2026-07-19
 
 ### Fixed

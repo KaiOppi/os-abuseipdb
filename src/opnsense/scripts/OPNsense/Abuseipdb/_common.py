@@ -58,6 +58,21 @@ DEFAULT_CONFIG = {
         "promote_threshold": "3",
         "promote_window_days": "14",
     },
+    # v0.12.0: Suricata EVE-log reporting (issue #7). A second reporting
+    # source alongside the firewall-log reporter. Submit-safety knobs
+    # (dry_run, precheck, rate limit, daily quota) are deliberately shared
+    # with the reporter section — this section only carries source-specific
+    # settings.
+    "suricata": {
+        "enabled": "0",
+        "eve_log": "/var/log/suricata/eve.json",
+        "min_hits": "1",
+        # Lowest priority level to include (1=high … 3=low). An alert is
+        # kept when its severity number is <= this value, so 2 = high+medium.
+        "min_severity": "2",
+        "default_categories": "15",
+        "comment_template": "Suricata IDS on OPNsense: {count} alert(s); {signatures}",
+    },
 }
 
 
@@ -211,6 +226,12 @@ def get_db() -> sqlite3.Connection:
     # Schema migrations — additive only, never destructive.
     if not _column_exists(db, "reports", "iface"):
         db.execute("ALTER TABLE reports ADD COLUMN iface TEXT")
+    # v0.12.0: tag each report row with the source that produced it so the
+    # Log tab and stats can tell firewall-log reports apart from Suricata
+    # EVE-log reports. Existing rows default to 'firewall' (the only source
+    # that existed before this migration).
+    if not _column_exists(db, "reports", "source"):
+        db.execute("ALTER TABLE reports ADD COLUMN source TEXT NOT NULL DEFAULT 'firewall'")
     if not _column_exists(db, "selfcare_entries", "iface"):
         db.execute("ALTER TABLE selfcare_entries ADD COLUMN iface TEXT")
     # v0.4.1: per-IP hit counter for the perma-block list.
