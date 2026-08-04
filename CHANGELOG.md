@@ -3,6 +3,11 @@
 All notable changes to this project are documented here.
 The format roughly follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project uses [Semantic Versioning](https://semver.org/).
 
+## [0.12.1] — 2026-08-04
+
+### Fixed
+- **Suricata category mapping: port scans were mislabelled as generic hacking (14 → 15).** The classtype→category matcher tested keywords in list order over the combined classtype + signature text, and the generic catch-all classtype buckets (*Misc Attack*, *bad-unknown*, *Potentially Bad Traffic* → all 15/Hacking) sat **before** the specific `scan` keyword. Many Emerging Threats `ET SCAN …` rules carry exactly such a generic classtype, so a real port scan was reported as category 15 instead of 14. The matcher now checks specific attack keywords first (weighting the signature over the classtype) and only falls back to the generic classtype buckets when nothing specific matched. Reported from real-world output on [#7](https://github.com/KaiOppi/os-abuseipdb/issues/7). Mapping logic only — no schema or config change.
+
 ## [0.12.0] — 2026-08-04
 
 ### Added

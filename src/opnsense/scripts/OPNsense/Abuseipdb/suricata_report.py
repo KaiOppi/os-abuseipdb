@@ -59,19 +59,23 @@ POSITION_FILE_NAME = "suricata.pos"
 
 # Suricata's `alert.category` is the classtype *description* string coming
 # from classification.config, e.g. "Attempted Information Leak", "Web
-# Application Attack", "A Network Trojan was detected". Map those (and a few
-# common signature keywords) to AbuseIPDB category IDs. First match wins per
-# alert; unmatched alerts fall back to the configured default_categories.
+# Application Attack", "A Network Trojan was detected". Together with the
+# signature text we map an alert to AbuseIPDB category IDs.
 #
 # AbuseIPDB categories used here:
 #   4 DDoS  14 Port Scan  15 Hacking  16 SQL Injection  18 Brute-Force
 #   20 Exploited Host  21 Web App Attack  22 SSH
-CATEGORY_MAP = [
-    ("port scan", "14"),
-    ("network scan", "14"),
-    ("attempted information leak", "14"),
-    ("attempted-recon", "14"),
-    ("detection of a network scan", "14"),
+#
+# Ordering matters: keywords are tested top-to-bottom and the first hit wins.
+# SPECIFIC attack keywords therefore come first; the GENERIC catch-all
+# classtype buckets (Misc Attack / bad-unknown / Potentially Bad Traffic,
+# all → 15 Hacking) come LAST. Otherwise a generic classtype like
+# "Potentially Bad Traffic" on an "ET SCAN ..." rule would win over the
+# specific "scan" keyword in the signature and mislabel a port scan as
+# generic hacking (14 → 15). We also weight the signature text over the
+# classtype for the specific tier, since the signature is the more precise
+# description.
+CATEGORY_MAP_SPECIFIC = [
     ("sql injection", "16,21"),
     ("web application attack", "21"),
     ("web-application-attack", "21"),
@@ -79,9 +83,15 @@ CATEGORY_MAP = [
     ("xss", "21"),
     ("brute", "18"),
     ("ssh", "22,18"),
+    ("port scan", "14"),
+    ("network scan", "14"),
+    ("detection of a network scan", "14"),
+    ("attempted-recon", "14"),
+    ("attempted information leak", "14"),
+    ("scan", "14"),
     ("denial of service", "4"),
-    ("ddos", "4"),
     ("attempted denial of service", "4"),
+    ("ddos", "4"),
     ("trojan", "15,20"),
     ("malware", "15,20"),
     ("exploit", "15"),
@@ -90,20 +100,35 @@ CATEGORY_MAP = [
     ("attempted user privilege gain", "15"),
     ("privilege gain", "15"),
     ("successful administrator", "15,20"),
+]
+# Generic classtype buckets — only used when no specific keyword matched.
+CATEGORY_MAP_GENERIC = [
     ("misc attack", "15"),
     ("misc-attack", "15"),
     ("bad-unknown", "15"),
     ("potentially bad traffic", "15"),
-    ("scan", "14"),
 ]
 
 
 def map_categories(alert_category: str, signature: str) -> str | None:
     """Return a comma-separated AbuseIPDB category string for one alert, or
-    None when nothing matches (caller then uses the configured default)."""
-    hay = f"{alert_category or ''} {signature or ''}".lower()
-    for keyword, cats in CATEGORY_MAP:
-        if keyword in hay:
+    None when nothing matches (caller then uses the configured default).
+
+    The signature is checked before the classtype for the specific tier, so
+    a precise signature keyword (e.g. "scan") wins over a generic classtype
+    bucket (e.g. "Potentially Bad Traffic")."""
+    sig = (signature or "").lower()
+    cat = (alert_category or "").lower()
+    # Specific tier: signature first (most precise), then classtype.
+    for keyword, cats in CATEGORY_MAP_SPECIFIC:
+        if keyword in sig:
+            return cats
+    for keyword, cats in CATEGORY_MAP_SPECIFIC:
+        if keyword in cat:
+            return cats
+    # Generic tier: only the classtype buckets, as a last resort.
+    for keyword, cats in CATEGORY_MAP_GENERIC:
+        if keyword in cat or keyword in sig:
             return cats
     return None
 
