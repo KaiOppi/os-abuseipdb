@@ -3,6 +3,20 @@
 All notable changes to this project are documented here.
 The format roughly follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project uses [Semantic Versioning](https://semver.org/).
 
+## [0.13.0] — 2026-08-05
+
+### Added
+- **Subnet / prefix aggregation for local defense ([#8](https://github.com/KaiOppi/os-abuseipdb/issues/8)).** IPv6 attacks arrive in waves from the same prefix — an attacker holding a /64 just rotates through addresses, so blocking individual /128s is whack-a-mole. A new **Aggregation** tab lets the plugin block the whole prefix locally once a wave is detected:
+  - When **N** distinct addresses (default 5) from the same prefix land in self-defense within the counting window (default 24 h), the whole prefix is blocked — **/64** for IPv6, **/24** for IPv4 (both configurable).
+  - The prefix block uses the normal self-defense TTL, so it lifts automatically like a per-IP entry.
+  - Each further wave (fresh addresses after the previous aggregation) bumps the prefix's wave counter; after **`permaban_after`** waves (default 2) the whole prefix is promoted to the perma-block list. Set to 0 to keep prefixes on self-defense TTL only.
+  - **Reporting to AbuseIPDB stays strictly per-IP** — the `/report` API takes no CIDR, and each rotated address is genuine independent evidence. This feature only affects the local pf tables.
+  - **Whitelist-safe:** a prefix that would swallow any operator-whitelisted IP is never blocked. Opt-in, and requires Self-Defense to be enabled. Aggregated prefixes appear as CIDR rows (source `aggregate` / `aggregate-prefix`) in the Self-Defense and Perma-Block lists.
+  - Runs on its own 10-minute cron when enabled. Thresholds/defaults informed by real-world DMZ data in [#8](https://github.com/KaiOppi/os-abuseipdb/issues/8) (waves of ~8-10 addresses).
+
+### Schema
+- New `aggregate` section (enabled, prefix_v6, prefix_v4, threshold, window_hours, permaban_after). New `prefix_aggregate` state table. Settings model bumped 0.1.9 → 0.1.10. Additive — existing installs are unaffected until the feature is explicitly enabled.
+
 ## [0.12.1] — 2026-08-04
 
 ### Fixed

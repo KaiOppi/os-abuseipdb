@@ -73,6 +73,23 @@ DEFAULT_CONFIG = {
         "default_categories": "15",
         "comment_template": "Suricata IDS on OPNsense: {count} alert(s); {signatures}",
     },
+    # v0.13.0: subnet/prefix aggregation for LOCAL defense (issue #8).
+    # IPv6 attacks arrive in waves from the same prefix (address rotation
+    # inside a /64), so blocking individual /128s is whack-a-mole. When
+    # `threshold` distinct addresses from one prefix land in self-defense
+    # within `window_hours`, the whole prefix is blocked locally instead.
+    # Reporting to AbuseIPDB stays per-IP (the API takes no CIDR).
+    "aggregate": {
+        "enabled": "0",
+        "prefix_v6": "64",     # CIDR length used to group IPv6 sources
+        "prefix_v4": "24",     # CIDR length used to group IPv4 sources
+        "threshold": "5",      # distinct IPs from one prefix -> block prefix
+        "window_hours": "24",  # counting window for the threshold
+        # After the prefix has been aggregated this many times (re-offended
+        # after its self-defense TTL expired), promote the whole prefix to
+        # the perma-block list. 0 = never auto-permaban a prefix.
+        "permaban_after": "2",
+    },
 }
 
 
@@ -198,6 +215,21 @@ def get_db() -> sqlite3.Connection:
         )
     """)
     db.execute("CREATE INDEX IF NOT EXISTS idx_quota_endpoint_ts ON api_quota_log (endpoint, ts DESC)")
+    # v0.13.0: prefix-aggregation state (issue #8). One row per prefix that
+    # has crossed the aggregation threshold at least once. agg_count counts
+    # the number of "waves" (re-aggregations after the previous self-defense
+    # TTL expired); once it reaches aggregate.permaban_after the whole prefix
+    # is promoted to the perma-block list.
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS prefix_aggregate (
+            prefix TEXT PRIMARY KEY,
+            family INTEGER NOT NULL,
+            first_seen_ts INTEGER NOT NULL,
+            last_agg_ts INTEGER,
+            agg_count INTEGER NOT NULL DEFAULT 0,
+            permabanned_ts INTEGER
+        )
+    """)
     # v0.9.0: operator-managed whitelist (Constantin's wishlist). IPs in
     # this table never enter selfcare, never get reported to AbuseIPDB,
     # are excluded when the blacklist downloader writes the pf alias,

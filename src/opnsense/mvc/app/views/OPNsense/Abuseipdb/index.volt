@@ -371,6 +371,7 @@
                             'frm_blacklist': "/api/abuseipdb/settings/get",
                             'frm_reporter': "/api/abuseipdb/settings/get",
                             'frm_suricata': "/api/abuseipdb/settings/get",
+                            'frm_aggregate': "/api/abuseipdb/settings/get",
                             'frm_selfcare': "/api/abuseipdb/settings/get",
                             'frm_permaban': "/api/abuseipdb/settings/get"};
 
@@ -738,6 +739,7 @@
     <li><a data-toggle="tab" href="#reporter">{{ lang._('Reporter') }}</a></li>
     <li><a data-toggle="tab" href="#suricata">{{ lang._('Suricata') }}</a></li>
     <li><a data-toggle="tab" href="#selfcare">{{ lang._('Self-Defense') }}</a></li>
+    <li><a data-toggle="tab" href="#aggregate">{{ lang._('Aggregation') }}</a></li>
     <li><a data-toggle="tab" href="#permaban">{{ lang._('Perma-Block') }}</a></li>
     <li><a data-toggle="tab" href="#whitelist">{{ lang._('Whitelist') }}</a></li>
     <li><a data-toggle="tab" href="#logtab">{{ lang._('Log') }}</a></li>
@@ -805,6 +807,17 @@
                 </thead>
                 <tbody></tbody>
             </table>
+        </div>
+    </div>
+    <div id="aggregate" class="tab-pane fade">
+        {{ partial("layout_partials/base_form", ['fields': aggregateForm, 'id': 'frm_aggregate']) }}
+        <div style="padding:10px 15px 15px 15px">
+            <p style="color:#555;font-size:12px;margin:0">
+                {{ lang._('IPv6 attacks often arrive in waves from the same prefix — an attacker rotates through addresses inside a /64. When several addresses from one prefix land in self-defense within the window, the whole prefix is blocked locally instead of chasing single addresses. After repeated waves the prefix is promoted to Perma-Block.') }}
+            </p>
+            <p style="color:#777;font-size:11px;margin-top:6px">
+                {{ lang._('Requires Self-Defense to be enabled. Reporting to AbuseIPDB stays per-IP (the API does not accept CIDR). Whitelisted IPs are protected — a prefix that would swallow a whitelisted address is never blocked. Aggregated prefixes appear as CIDR rows (source "aggregate") in the Self-Defense and Perma-Block lists.') }}
+            </p>
         </div>
     </div>
     <div id="permaban" class="tab-pane fade">

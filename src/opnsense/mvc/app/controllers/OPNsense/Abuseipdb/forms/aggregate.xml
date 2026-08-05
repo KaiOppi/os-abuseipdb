@@ -1,0 +1,38 @@
+<form>
+    <field>
+        <id>abuseipdb.aggregate.enabled</id>
+        <label>Prefix aggregation enabled</label>
+        <type>checkbox</type>
+        <help>Block whole subnets locally when several addresses from the same prefix attack in a wave (typical for rotating IPv6 sources). Requires Self-Defense to be enabled — aggregated prefixes are written into the self-defense pf table. Reporting to AbuseIPDB stays per-IP (the API takes no CIDR); this only affects the local pf block.</help>
+    </field>
+    <field>
+        <id>abuseipdb.aggregate.threshold</id>
+        <label>Addresses per prefix before aggregating</label>
+        <type>text</type>
+        <help>How many distinct addresses from the same prefix must land in self-defense (within the window below) before the whole prefix is blocked. Default 5. Observed IPv6 waves are often 8-10 addresses.</help>
+    </field>
+    <field>
+        <id>abuseipdb.aggregate.window_hours</id>
+        <label>Counting window (hours)</label>
+        <type>text</type>
+        <help>Time window over which the addresses above are counted. Default 24.</help>
+    </field>
+    <field>
+        <id>abuseipdb.aggregate.prefix_v6</id>
+        <label>IPv6 prefix length</label>
+        <type>text</type>
+        <help>CIDR length used to group and block IPv6 sources (48-64). Default 64 — the standard single-LAN IPv6 allocation an attacker rotates within.</help>
+    </field>
+    <field>
+        <id>abuseipdb.aggregate.prefix_v4</id>
+        <label>IPv4 prefix length</label>
+        <type>text</type>
+        <help>CIDR length used to group and block IPv4 sources (16-30). Default 24. Use with care — a /24 can cover many unrelated hosts.</help>
+    </field>
+    <field>
+        <id>abuseipdb.aggregate.permaban_after</id>
+        <label>Perma-block prefix after N waves</label>
+        <type>text</type>
+        <help>After a prefix has been aggregated into self-defense this many times (i.e. it re-offended with fresh addresses after its TTL expired), promote the whole prefix to the perma-block list. Default 2. Set to 0 to never auto-permaban a prefix (self-defense TTL only).</help>
+    </field>
+</form>

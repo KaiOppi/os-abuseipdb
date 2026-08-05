@@ -7,6 +7,7 @@ OPNsense plugin for bidirectional [AbuseIPDB](https://www.abuseipdb.com) integra
 - **Suricata reporter** — optional second source that submits attacker IPs from Suricata IDS/IPS alerts (EVE JSON log). Only inbound attacks against this host are reported; Suricata classtypes map automatically to AbuseIPDB categories. Shares the reporter's safety settings and daily quota.
 - **Self-Defense** — TTL-based local blocklist populated from reporter submits; closes the gap while AbuseIPDB's community catches up.
 - **Perma-Block** — repeat offenders that come back after their Self-Defense TTL expired get auto-promoted to a permanent block list, with a per-IP hit counter (cumulative across reboots) so you see exactly how often each entry actually triggered.
+- **Subnet aggregation** — IPv6 attacks often arrive in waves from the same prefix (address rotation inside a /64). When several addresses from one prefix hit within a window, the whole prefix is blocked locally (/64 for IPv6, /24 for IPv4), escalating to Perma-Block after repeated waves. Reporting to AbuseIPDB stays per-IP; whitelisted IPs are protected.
 - **Whitelist** — operator-managed *never touch* list: whitelisted IPs are excluded from reports, self-defense, perma-block, and the downloaded blacklist. Designed for known-good sources (remote support tools, monitoring, partner networks) that occasionally trip the reporter. Adding an IP automatically lifts any active self-defense or perma-block entry for it.
 - **Configurable rule style** — choose where the plugin places its block rules: classic `Firewall: Rules: WAN` (legacy), the modern `Firewall: Automation: Filter` tab, or *None* if you'd rather craft rules yourself against the maintained aliases. Style switches auto-clean up rules in the previously-used location.
 - **Per-interface tracking** — every report, self-defense entry and perma-block hit knows which uplink it came in over; useful for multi-WAN setups (failover or load-balance) to see *where* the attack pressure lands.
@@ -14,7 +15,7 @@ OPNsense plugin for bidirectional [AbuseIPDB](https://www.abuseipdb.com) integra
 - **Dashboard widget** — live stats (blocklist size, last download, quota, reports, self-defense active/total, perma-block size, whitelist size).
 - **Fire & forget** — cron jobs are created automatically when you enable the feature (daily download, 5-minute reporter cycles, hourly self-defense cleanup, daily perma-block sweep, 5-minute hit-counter sampler).
 
-> **Status:** public beta (v0.12.0). Running in production on several OPNsense boxes (26.1 / FreeBSD 14 and 26.7 / FreeBSD 15). Looking for community testers — please open an issue or a r/opnsense reply with feedback.
+> **Status:** public beta (v0.13.0). Running in production on several OPNsense boxes (26.1 / FreeBSD 14 and 26.7 / FreeBSD 15). Looking for community testers — please open an issue or a r/opnsense reply with feedback.
 
 ## Screenshots
 
@@ -91,7 +92,7 @@ it-service-nf OPNsense plugins).
 ### Method B — direct package *(no external repository)*
 
 ```sh
-pkg add https://github.com/KaiOppi/os-abuseipdb/releases/download/v0.12.0/os-abuseipdb-0.12.0.pkg
+pkg add https://github.com/KaiOppi/os-abuseipdb/releases/download/v0.13.0/os-abuseipdb-0.13.0.pkg
 ```
 
 Since v0.11.2 the plugin self-registers on install, so this method also lands as
@@ -115,7 +116,7 @@ first:
 
 ```sh
 # Replace the version with the latest from the releases page
-pkg add -f https://github.com/KaiOppi/os-abuseipdb/releases/download/v0.12.0/os-abuseipdb-0.12.0.pkg
+pkg add -f https://github.com/KaiOppi/os-abuseipdb/releases/download/v0.13.0/os-abuseipdb-0.13.0.pkg
 ```
 
 Notes:
@@ -260,6 +261,30 @@ The Perma-Block tab shows the live list with two telemetry columns:
 
 You can also add IPs manually (e.g. for a problem source you've identified outside the reporter path) — the **Add to Perma-Block** form takes an IP plus an optional note.
 
+### Aggregation (subnet blocking)
+
+Tab **Aggregation** → enable. Requires Self-Defense to be enabled.
+
+IPv6 attackers commonly rotate through addresses inside their prefix, so blocking individual /128s is whack-a-mole. This feature watches the addresses that land in Self-Defense, groups them by prefix, and blocks the **whole prefix** locally once a wave is detected.
+
+Escalation (mirrors the per-IP Self-Defense → Perma-Block model, one level up):
+1. Once **N** distinct addresses from the same prefix land in Self-Defense within the window, the whole prefix is added to the Self-Defense pf table (with the normal TTL).
+2. When the TTL expires the prefix is unblocked again.
+3. Each further wave (fresh addresses after the previous aggregation) bumps the prefix's wave counter; after **`Perma-block prefix after N waves`** it is promoted to Perma-Block.
+
+Default values:
+- `Addresses per prefix before aggregating` — 5 (observed IPv6 waves are often 8–10)
+- `Counting window (hours)` — 24
+- `IPv6 prefix length` — 64 (the standard single-LAN allocation)
+- `IPv4 prefix length` — 24 (use with care — a /24 covers many hosts)
+- `Perma-block prefix after N waves` — 2 (0 = self-defense TTL only, never auto-permaban a prefix)
+
+Notes:
+- **Reporting to AbuseIPDB stays per-IP** — the API accepts no CIDR, and every rotated address is genuine independent evidence that builds the subnet's reputation there. This feature only affects the *local* pf block.
+- **Whitelist-safe:** a prefix that would swallow any whitelisted IP is never blocked.
+- Aggregated prefixes appear as CIDR rows (source `aggregate` / `aggregate-prefix`) in the Self-Defense and Perma-Block lists.
+- Runs on a 10-minute cron when enabled.
+
 ### Whitelist
 
 Tab **Whitelist**.
@@ -387,6 +412,7 @@ pkg remove os-abuseipdb
 - [x] Architecture-agnostic package — one build for FreeBSD 14 (26.1) and FreeBSD 15 (26.7) (v0.11.1)
 - [x] Registers as a managed OPNsense plugin + signed pkg repository (`pkg.itsnf.de`) for GUI install/updates (v0.11.2)
 - [x] Suricata IDS/IPS alerts as a reporting source, with automatic classtype→category mapping (v0.12.0, [#7](https://github.com/KaiOppi/os-abuseipdb/issues/7))
+- [x] Subnet / prefix aggregation for local defense — block a whole /64 (v6) or /24 (v4) after a wave, escalate to perma-block (v0.13.0, [#8](https://github.com/KaiOppi/os-abuseipdb/issues/8))
 
 **Open:**
 - [ ] Rule-to-category mapping UI (currently default categories only)

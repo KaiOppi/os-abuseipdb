@@ -5,7 +5,7 @@
 set -eu
 
 NAME=os-abuseipdb
-VERSION=0.12.1
+VERSION=0.13.0
 # The plugin ships only Python/PHP/XML/JS — no compiled binaries — so it is
 # architecture- and FreeBSD-version-independent. Building it as FreeBSD:14:amd64
 # made `pkg add` reject it with "wrong architecture" on OPNsense 26.7 (FreeBSD

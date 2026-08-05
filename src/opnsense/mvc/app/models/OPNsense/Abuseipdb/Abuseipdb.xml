@@ -1,7 +1,7 @@
 <model>
     <mount>//OPNsense/Abuseipdb</mount>
     <description>AbuseIPDB plugin configuration</description>
-    <version>0.1.9</version>
+    <version>0.1.10</version>
     <items>
         <general>
             <enabled type="BooleanField">
@@ -212,5 +212,41 @@
                 <Required>Y</Required>
             </comment_template>
         </suricata>
+        <aggregate>
+            <enabled type="BooleanField">
+                <default>0</default>
+                <Required>Y</Required>
+            </enabled>
+            <prefix_v6 type="IntegerField">
+                <MinimumValue>48</MinimumValue>
+                <MaximumValue>64</MaximumValue>
+                <default>64</default>
+                <Required>Y</Required>
+            </prefix_v6>
+            <prefix_v4 type="IntegerField">
+                <MinimumValue>16</MinimumValue>
+                <MaximumValue>30</MaximumValue>
+                <default>24</default>
+                <Required>Y</Required>
+            </prefix_v4>
+            <threshold type="IntegerField">
+                <MinimumValue>2</MinimumValue>
+                <MaximumValue>100</MaximumValue>
+                <default>5</default>
+                <Required>Y</Required>
+            </threshold>
+            <window_hours type="IntegerField">
+                <MinimumValue>1</MinimumValue>
+                <MaximumValue>168</MaximumValue>
+                <default>24</default>
+                <Required>Y</Required>
+            </window_hours>
+            <permaban_after type="IntegerField">
+                <MinimumValue>0</MinimumValue>
+                <MaximumValue>50</MaximumValue>
+                <default>2</default>
+                <Required>Y</Required>
+            </permaban_after>
+        </aggregate>
     </items>
 </model>

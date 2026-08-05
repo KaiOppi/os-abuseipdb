@@ -57,6 +57,7 @@ $reporter_on = (string)$pluginCfg->reporter->enabled === "1";
 $selfcare_on = (string)$pluginCfg->selfcare->enabled === "1";
 $permaban_on = (string)$pluginCfg->permaban->enabled === "1";
 $suricata_on = (string)$pluginCfg->suricata->enabled === "1";
+$aggregate_on = (string)$pluginCfg->aggregate->enabled === "1";
 
 // Rule-style settings (added in v0.5.0). Defaults preserve pre-v0.5.0
 // behaviour when an older config.xml is loaded for the first time.
@@ -529,6 +530,13 @@ $dirty_cron |= ensure_cron(
     "abuseipdb selfcare_cleanup",
     "7", "*",
     $plugin_enabled && $selfcare_on
+);
+$dirty_cron |= ensure_cron(
+    $cron_mdl,
+    "os-abuseipdb: prefix aggregation scan",
+    "abuseipdb prefix_aggregate",
+    "*/10", "*",
+    $plugin_enabled && $selfcare_on && $aggregate_on
 );
 $dirty_cron |= ensure_cron(
     $cron_mdl,
