@@ -1,7 +1,7 @@
 <model>
     <mount>//OPNsense/Abuseipdb</mount>
     <description>AbuseIPDB plugin configuration</description>
-    <version>0.1.10</version>
+    <version>0.1.11</version>
     <items>
         <general>
             <enabled type="BooleanField">
@@ -175,6 +175,16 @@
                 <default>25</default>
                 <Required>Y</Required>
             </precheck_min_confidence>
+            <wan_ifaces type="TextField">
+                <Mask>/^[a-zA-Z0-9_,\s]*$/u</Mask>
+                <ValidationMessage>Comma-separated interface identifiers (e.g. "wan,opt1").</ValidationMessage>
+                <default></default>
+                <Required>N</Required>
+            </wan_ifaces>
+            <skip_permabanned type="BooleanField">
+                <default>1</default>
+                <Required>Y</Required>
+            </skip_permabanned>
         </reporter>
         <suricata>
             <enabled type="BooleanField">

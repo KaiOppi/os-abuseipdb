@@ -103,15 +103,33 @@ def apply_whitelist_filter(ips: list[str]) -> tuple[list[str], int]:
 
     Returns (filtered_ips, dropped_count).
     """
+    import ipaddress
     db = get_db()
     try:
-        wl = {row[0] for row in db.execute("SELECT ip FROM whitelist").fetchall()}
-        if not wl:
+        rows = [row[0] for row in db.execute("SELECT ip FROM whitelist").fetchall()]
+        if not rows:
             return ips, 0
+        # Split the whitelist into exact host entries (O(1) set lookup) and
+        # CIDR ranges (v0.14.0 #9 — parsed once, checked by containment).
+        wl_exact = {r for r in rows if "/" not in r}
+        wl_nets = []
+        for r in rows:
+            if "/" in r:
+                try:
+                    wl_nets.append(ipaddress.ip_network(r, strict=False))
+                except ValueError:
+                    pass
         kept = []
         dropped = 0
         for ip in ips:
-            if ip in wl:
+            drop = ip in wl_exact
+            if not drop and wl_nets:
+                try:
+                    addr = ipaddress.ip_address(ip)
+                    drop = any(addr.version == n.version and addr in n for n in wl_nets)
+                except ValueError:
+                    drop = False
+            if drop:
                 record_whitelist_skip(db, ip, "blacklist")
                 dropped += 1
             else:

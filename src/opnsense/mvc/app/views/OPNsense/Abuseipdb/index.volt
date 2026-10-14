@@ -873,7 +873,7 @@
     <div id="whitelist" class="tab-pane fade">
         <div style="padding:10px 15px 15px 15px">
             <p style="color:#555;font-size:12px;margin:0 0 8px 0">
-                {{ lang._('Whitelisted IPs are never reported, blocked, permabanned, or included in the downloaded blacklist. Use this for known-good sources (your monitoring, remote-support tools, etc.) that occasionally trip the reporter.') }}
+                {{ lang._('Whitelisted IPs are never reported, blocked, permabanned, or included in the downloaded blacklist. Use this for known-good sources (your monitoring, remote-support tools, etc.) that occasionally trip the reporter. You can whitelist a whole range in CIDR notation (e.g. 2a00:20::/32 for a mobile-carrier IPv6 prefix, or 203.0.113.0/24) as well as a single address.') }}
             </p>
             <h4 style="margin-top:18px">
                 {{ lang._('Add to Whitelist') }}
@@ -881,7 +881,7 @@
             <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
                 <div>
                     <label style="display:block;font-size:11px;color:#555">{{ lang._('IP address') }}</label>
-                    <input type="text" id="whitelist_new_ip" placeholder="1.2.3.4" class="form-control" style="width:160px"/>
+                    <input type="text" id="whitelist_new_ip" placeholder="1.2.3.4 or 2a00:20::/32" class="form-control" style="width:200px"/>
                 </div>
                 <div>
                     <label style="display:block;font-size:11px;color:#555">{{ lang._('Note (optional)') }}</label>

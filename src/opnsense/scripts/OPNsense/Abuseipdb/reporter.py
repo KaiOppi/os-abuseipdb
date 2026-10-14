@@ -349,6 +349,7 @@ def main() -> int:
     precheck_min_conf = int(cfg["reporter"]["precheck_min_confidence"])
     selfcare_on = cfg["selfcare"]["enabled"] == "1"
     selfcare_ttl = int(cfg["selfcare"]["ttl_hours"]) * 3600
+    skip_permabanned = cfg["reporter"].get("skip_permabanned", "1") == "1"
     permaban_on = cfg["permaban"]["enabled"] == "1"
     permaban_threshold = max(2, int(cfg["permaban"]["promote_threshold"]))
     permaban_window = max(1, int(cfg["permaban"]["promote_window_days"])) * 86400
@@ -428,6 +429,13 @@ def main() -> int:
         if is_whitelisted(db, ip):
             record_whitelist_skip(db, ip, "reporter")
             log(f"whitelist skip {ip} via {','.join(sorted(info['ifaces']))} (reporter)")
+            continue
+        # v0.14.0 (#10): an IP already on the perma-block list is neutralised
+        # locally and long known at AbuseIPDB — re-reporting it every rate-
+        # limit window just burns daily quota meant for fresh attackers.
+        # Skip it unless the operator opted to keep reporting perma-blocks.
+        if skip_permabanned and is_permabanned(db, ip):
+            log(f"skip report {ip} — already perma-blocked (reporter)")
             continue
 
         ports = ",".join(sorted(info["ports"]))[:60]

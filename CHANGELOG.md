@@ -3,6 +3,19 @@
 All notable changes to this project are documented here.
 The format roughly follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project uses [Semantic Versioning](https://semver.org/).
 
+## [0.14.0] — 2026-10-14
+
+### Fixed
+- **Aggregated / CIDR entries could not be deleted from the Self-Defense or Perma-Block lists ([#11](https://github.com/KaiOppi/os-abuseipdb/issues/11)).** The trash button showed its confirm dialog but nothing happened: the API layer validated the submitted value with `FILTER_VALIDATE_IP`, which rejects any CIDR range (`91.196.152.0/24`, `2a06:4880:8000::/64`) — exactly the shape the v0.13.0 aggregation feature writes to those lists. The value travels in the POST body (no routing involved), so the remove/add actions now accept a single IP **or** a CIDR range. The backend scripts already removed CIDR entries correctly (exact-match on the stored string + `pfctl` accepts CIDR), so no data was ever stuck beyond the GUI guard.
+
+### Added
+- **CIDR ranges in the operator whitelist ([#9](https://github.com/KaiOppi/os-abuseipdb/issues/9)).** You can now whitelist a whole range (e.g. a mobile carrier's rotating IPv6 prefix `2a00:20::/32`, or `203.0.113.0/24`) instead of chasing individual addresses. Whitelist matching is by subnet containment on the reporter hot path, the blacklist downloader, selfcare and permaban. Adding a range also lifts every already-blocked address or sub-prefix contained in it, retroactively honouring "this whole range is fine".
+- **Manual override for the monitoring interface(s) ([#12](https://github.com/KaiOppi/os-abuseipdb/issues/12)).** New *Reporter* setting **Monitoring interface(s)** — leave empty to keep auto-detecting WAN-like interfaces (gateway or dynamic address), or name the uplink identifier(s) (`wan`, `wan,opt1`) or their friendly names (`WAN`, `DSL`) explicitly. Fixes setups where every interface has a static IP and only a management interface carries a gateway, which auto-detection would otherwise mis-pick as the WAN.
+- **Stop re-reporting perma-blocked IPs ([#10](https://github.com/KaiOppi/os-abuseipdb/issues/10)).** New *Reporter* setting **Don't re-report perma-blocked IPs** (default **on**): once an IP is on the Perma-Block list it is neutralised locally and long known at AbuseIPDB, so re-reporting it every rate-limit window only burned the daily quota meant for fresh attackers. Applies to both the firewall and Suricata reporters. Turn it off to keep reporting perma-blocked IPs for maximum community contribution. **Note:** this changes behaviour on upgrade — perma-blocked IPs that were previously re-reported will no longer be, unless you disable the option.
+
+### Schema
+- New `reporter` fields `wan_ifaces` (manual monitoring-interface override, empty = auto) and `skip_permabanned` (default 1). Settings model bumped 0.1.10 → 0.1.11. Additive — existing installs keep auto-detection and gain the perma-block report skip by default.
+
 ## [0.13.0] — 2026-08-05
 
 ### Added

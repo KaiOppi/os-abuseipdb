@@ -48,6 +48,19 @@ DEFAULT_CONFIG = {
         "dry_run": "1",
         "precheck": "1",
         "precheck_min_confidence": "25",
+        # v0.14.0 (#12): manual override for the monitoring interface(s).
+        # Empty = auto-detect WAN-like interfaces (gateway or dynamic addr).
+        # Some static-IP setups carry a gateway only on a management
+        # interface, which the heuristic then wrongly treats as the WAN —
+        # listing the real uplink identifier(s) here (csv, e.g. "wan,opt1")
+        # bypasses the heuristic entirely.
+        "wan_ifaces": "",
+        # v0.14.0 (#10): once an IP sits on the perma-block list, re-reporting
+        # it achieves little (already neutralised locally, long known at
+        # AbuseIPDB) and burns the daily quota that should go to fresh
+        # attackers. Skip such IPs by default; set to 0 to keep reporting
+        # perma-blocked IPs for maximum community contribution.
+        "skip_permabanned": "1",
     },
     "selfcare": {
         "enabled": "0",
@@ -372,6 +385,28 @@ def get_wan_iface_phys_names() -> set:
         ifaces = root.find("./interfaces")
         if ifaces is None:
             return out
+        # v0.14.0 (#12): manual override. When the operator has explicitly
+        # named the monitoring interface(s) in reporter/wan_ifaces (a csv of
+        # OPNsense identifiers like "wan,opt1", or their friendly descr like
+        # "WAN,DSL"), trust that and skip auto-detection — some static-IP
+        # setups have a gateway only on a management interface, which the
+        # heuristic below would otherwise mis-pick as the WAN.
+        override_node = root.find("./OPNsense/Abuseipdb/reporter/wan_ifaces")
+        override_raw = (override_node.text or "").strip() if override_node is not None else ""
+        if override_raw:
+            wanted = {t.strip().lower() for t in override_raw.split(",") if t.strip()}
+            for child in ifaces:
+                ident = child.tag.lower()
+                descr_node = child.find("descr")
+                descr = (descr_node.text or "").strip().lower() if descr_node is not None else ""
+                if ident in wanted or (descr and descr in wanted):
+                    if_node = child.find("if")
+                    if if_node is not None and if_node.text:
+                        out.add(if_node.text.strip())
+            # Explicit override wins even if it resolved to nothing — a typo
+            # should surface as "no reports" rather than silently falling
+            # back to a wrong auto-detected interface.
+            return out
         wan_like_dyn_v4 = {"dhcp", "pppoe", "ppp", "l2tp", "pptp"}
         wan_like_dyn_v6 = {"dhcp6", "slaac", "6rd", "6to4", "track6"}
         for child in ifaces:
@@ -529,12 +564,33 @@ def record_quota(db, endpoint: str, response) -> None:
 
 def is_whitelisted(db, ip: str) -> bool:
     """True when the IP appears in the operator-managed whitelist.
-    Cheap O(log n) lookup via the PK index — safe to call on the per-
-    candidate hot path of the reporter."""
+
+    Fast path is an O(log n) exact lookup via the PK index — safe on the
+    per-candidate hot path of the reporter.
+
+    v0.14.0 (#9): the whitelist may now also hold CIDR ranges (e.g. a
+    mobile carrier's IPv6 prefix like 2a00:20::/32, whose addresses rotate
+    per cell tower). When the exact lookup misses we fall back to subnet
+    containment against the handful of range entries. The whitelist is
+    operator-managed and small, so scanning the '/'-rows per miss is cheap.
+    """
     if not ip:
         return False
-    row = db.execute("SELECT 1 FROM whitelist WHERE ip = ?", (ip,)).fetchone()
-    return row is not None
+    if db.execute("SELECT 1 FROM whitelist WHERE ip = ?", (ip,)).fetchone() is not None:
+        return True
+    import ipaddress
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return False
+    for (entry,) in db.execute("SELECT ip FROM whitelist WHERE ip LIKE '%/%'").fetchall():
+        try:
+            net = ipaddress.ip_network(entry, strict=False)
+        except ValueError:
+            continue
+        if addr.version == net.version and addr in net:
+            return True
+    return False
 
 
 def record_whitelist_skip(db, ip: str, path: str) -> None:

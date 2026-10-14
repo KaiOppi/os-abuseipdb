@@ -44,8 +44,8 @@ from _common import (get_config, get_db, get_iface_map, get_local_networks,
 # behave identically on the shared submit path (quota, dedupe, self-defense,
 # permaban, pre-check). Importing reporter has no side effects beyond the
 # requests-availability check it already performs.
-from reporter import (check_abuseipdb, is_local_source, is_private,
-                      maybe_promote, reports_today, selfcare_add,
+from reporter import (check_abuseipdb, is_local_source, is_permabanned,
+                      is_private, maybe_promote, reports_today, selfcare_add,
                       should_skip_ip, submit_report)
 
 try:
@@ -222,6 +222,7 @@ def main() -> int:
     precheck_min_conf = int(cfg["reporter"]["precheck_min_confidence"])
     selfcare_on = cfg["selfcare"]["enabled"] == "1"
     selfcare_ttl = int(cfg["selfcare"]["ttl_hours"]) * 3600
+    skip_permabanned = cfg["reporter"].get("skip_permabanned", "1") == "1"
     permaban_on = cfg["permaban"]["enabled"] == "1"
     permaban_threshold = max(2, int(cfg["permaban"]["promote_threshold"]))
     permaban_window = max(1, int(cfg["permaban"]["promote_window_days"])) * 86400
@@ -313,6 +314,12 @@ def main() -> int:
         if is_whitelisted(db, ip):
             record_whitelist_skip(db, ip, "suricata")
             log(f"whitelist skip {ip} (suricata)")
+            continue
+        # v0.14.0 (#10): skip IPs already on the perma-block list — same
+        # rationale as the firewall reporter (neutralised locally, known
+        # at AbuseIPDB, saves daily quota for fresh attackers).
+        if skip_permabanned and is_permabanned(db, ip):
+            log(f"skip report {ip} — already perma-blocked (suricata)")
             continue
 
         categories = merge_categories(info["cats"], default_categories)

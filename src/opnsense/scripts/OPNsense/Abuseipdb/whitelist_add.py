@@ -18,10 +18,37 @@ from _common import (PF_TABLE_PERMABAN, PF_TABLE_SELFCARE, get_db, log,
                      out_json)
 
 
-def is_valid_ip(s: str) -> bool:
+def parse_target(s: str):
+    """Return (canonical_str, network_or_None) for a single IP or a CIDR
+    range, or (None, None) when the string is neither.
+
+    v0.14.0 (#9): the whitelist accepts ranges now (e.g. a mobile carrier's
+    IPv6 prefix 2a00:20::/32, whose addresses rotate per cell tower). A
+    single address is stored in its canonical host form; a range in its
+    canonical network form so DB + pfctl + containment checks all agree.
+    """
     try:
-        ipaddress.ip_address(s)
-        return True
+        return str(ipaddress.ip_address(s)), None
+    except ValueError:
+        pass
+    try:
+        net = ipaddress.ip_network(s, strict=False)
+        return str(net), net
+    except ValueError:
+        return None, None
+
+
+def _contained(entry: str, net) -> bool:
+    """True when a stored selfcare/permaban entry (a host IP or a CIDR)
+    falls inside the whitelisted network `net`."""
+    try:
+        addr = ipaddress.ip_address(entry)
+        return addr.version == net.version and addr in net
+    except ValueError:
+        pass
+    try:
+        sub = ipaddress.ip_network(entry, strict=False)
+        return sub.version == net.version and sub.subnet_of(net)
     except ValueError:
         return False
 
@@ -34,11 +61,10 @@ def main() -> int:
     source = sys.argv[2].strip() if len(sys.argv) > 2 else "manual"
     note = sys.argv[3].strip() if len(sys.argv) > 3 else ""
 
-    if not is_valid_ip(ip):
-        out_json({"status": "error", "message": f"invalid ip: {ip}"})
+    ip, net = parse_target(ip)
+    if ip is None:
+        out_json({"status": "error", "message": f"invalid ip or cidr: {sys.argv[1].strip()}"})
         return 1
-    # Canonical string form so DB + pfctl always agree.
-    ip = str(ipaddress.ip_address(ip))
 
     db = get_db()
     now = int(time.time())
@@ -50,27 +76,44 @@ def main() -> int:
         (ip, ip, now, source, note),
     )
 
+    # Determine which already-blocked entries this whitelist add should lift.
+    # For a single IP that's an exact match; for a CIDR it's every active
+    # selfcare entry and every permaban entry contained in the range (the
+    # operator just said "this whole range is fine" — e.g. Constantin's
+    # Vodafone IPv6 prefix of previously-blocked mobile clients, #9).
+    if net is None:
+        sc_targets = [ip]
+        pb_targets = [ip]
+    else:
+        sc_targets = [r[0] for r in db.execute(
+            "SELECT ip FROM selfcare_entries WHERE removed_ts IS NULL").fetchall()
+            if _contained(r[0], net)]
+        pb_targets = [r[0] for r in db.execute(
+            "SELECT ip FROM permaban").fetchall() if _contained(r[0], net)]
+
     # Side-effect 1: lift any active selfcare entry (with pfctl). The
-    # operator just said this IP is fine — don't keep blocking it.
-    lifted_selfcare = db.execute(
-        "UPDATE selfcare_entries SET removed_ts = ? "
-        "WHERE ip = ? AND removed_ts IS NULL",
-        (now, ip),
-    ).rowcount
-    if lifted_selfcare:
+    # operator just said this IP/range is fine — don't keep blocking it.
+    lifted_selfcare = 0
+    for t in sc_targets:
+        lifted_selfcare += db.execute(
+            "UPDATE selfcare_entries SET removed_ts = ? "
+            "WHERE ip = ? AND removed_ts IS NULL",
+            (now, t),
+        ).rowcount
         subprocess.run(
-            ["/sbin/pfctl", "-t", PF_TABLE_SELFCARE, "-T", "delete", ip],
+            ["/sbin/pfctl", "-t", PF_TABLE_SELFCARE, "-T", "delete", t],
             check=False, capture_output=True, timeout=5,
         )
 
-    # Side-effect 2: remove from permaban if present (it was a manual
+    # Side-effect 2: remove from permaban if present (it was a manual/auto
     # decision; whitelisting overrides it).
-    lifted_permaban = db.execute(
-        "DELETE FROM permaban WHERE ip = ?", (ip,)
-    ).rowcount
-    if lifted_permaban:
+    lifted_permaban = 0
+    for t in pb_targets:
+        lifted_permaban += db.execute(
+            "DELETE FROM permaban WHERE ip = ?", (t,)
+        ).rowcount
         subprocess.run(
-            ["/sbin/pfctl", "-t", PF_TABLE_PERMABAN, "-T", "delete", ip],
+            ["/sbin/pfctl", "-t", PF_TABLE_PERMABAN, "-T", "delete", t],
             check=False, capture_output=True, timeout=5,
         )
 

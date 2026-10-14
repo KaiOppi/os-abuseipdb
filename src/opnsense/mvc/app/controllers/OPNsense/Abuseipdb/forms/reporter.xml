@@ -53,4 +53,16 @@
         <type>text</type>
         <help>Text submitted as the report comment. Placeholders: {count} hits, {protos}, {ports}, {iface}, {src_ip}. Max 1000 chars after substitution (API limit 1024). Default is the historical built-in.</help>
     </field>
+    <field>
+        <id>abuseipdb.reporter.skip_permabanned</id>
+        <label>Don't re-report perma-blocked IPs</label>
+        <type>checkbox</type>
+        <help>When enabled (default), an IP that is already on the Perma-Block list is no longer submitted to AbuseIPDB — it is neutralised locally and long known to AbuseIPDB, so re-reporting it every rate-limit window only burns the daily quota meant for fresh attackers. Disable to keep reporting perma-blocked IPs for maximum community contribution.</help>
+    </field>
+    <field>
+        <id>abuseipdb.reporter.wan_ifaces</id>
+        <label>Monitoring interface(s) — manual override</label>
+        <type>text</type>
+        <help>Leave empty to auto-detect WAN-like interfaces (those with a configured gateway or a dynamic address such as PPPoE/DHCP). Set a comma-separated list of interface identifiers (e.g. "wan" or "wan,opt1") — or their friendly names (WAN, DSL) — to force exactly which interface(s) the reporters watch for inbound attacks. Use this when all interfaces have static IPs and only a management interface carries a gateway, which the auto-detection would otherwise mis-pick as the WAN.</help>
+    </field>
 </form>

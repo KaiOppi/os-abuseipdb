@@ -18,6 +18,36 @@ class ServiceController extends ApiMutableServiceControllerBase
     protected static $internalServiceName = 'abuseipdb';
 
     /**
+     * Accept a single IPv4/IPv6 address OR a CIDR range (e.g.
+     * "203.0.113.0/24", "2a06:4880:8000::/64"). v0.14.0 (#11): the
+     * self-defense / perma-block lists hold aggregated prefixes now, and
+     * the whitelist accepts ranges (#9), so the plain FILTER_VALIDATE_IP
+     * guard — which rejects any '/' — silently blocked every delete/add of
+     * an aggregated entry (the confirm dialog showed, nothing happened).
+     */
+    private function validIpOrCidr(string $ip): bool
+    {
+        if (filter_var($ip, FILTER_VALIDATE_IP) !== false) {
+            return true;
+        }
+        if (strpos($ip, '/') === false) {
+            return false;
+        }
+        [$addr, $len] = explode('/', $ip, 2);
+        if ($len === '' || !ctype_digit($len)) {
+            return false;
+        }
+        $len = (int)$len;
+        if (filter_var($addr, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false) {
+            return $len >= 0 && $len <= 32;
+        }
+        if (filter_var($addr, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) !== false) {
+            return $len >= 0 && $len <= 128;
+        }
+        return false;
+    }
+
+    /**
      * Trigger an ad-hoc blacklist download.
      */
     public function downloadAction()
@@ -135,7 +165,7 @@ class ServiceController extends ApiMutableServiceControllerBase
         }
         $ip = trim((string)$this->request->getPost('ip', 'striptags', ''));
         $note = trim((string)$this->request->getPost('note', 'striptags', ''));
-        if ($ip === '' || !filter_var($ip, FILTER_VALIDATE_IP)) {
+        if ($ip === '' || !$this->validIpOrCidr($ip)) {
             return ['status' => 'failed', 'message' => 'invalid ip address'];
         }
         // Sanitise note: keep length bounded, strip control chars / commas
@@ -161,7 +191,7 @@ class ServiceController extends ApiMutableServiceControllerBase
             return ['status' => 'failed', 'message' => 'POST required'];
         }
         $ip = trim((string)$this->request->getPost('ip', 'striptags', ''));
-        if ($ip === '' || !filter_var($ip, FILTER_VALIDATE_IP)) {
+        if ($ip === '' || !$this->validIpOrCidr($ip)) {
             return ['status' => 'failed', 'message' => 'invalid ip address'];
         }
         $backend = new Backend();
@@ -199,7 +229,7 @@ class ServiceController extends ApiMutableServiceControllerBase
             return ['status' => 'failed', 'message' => 'POST required'];
         }
         $ip = trim((string)$this->request->getPost('ip', 'striptags', ''));
-        if ($ip === '' || !filter_var($ip, FILTER_VALIDATE_IP)) {
+        if ($ip === '' || !$this->validIpOrCidr($ip)) {
             return ['status' => 'failed', 'message' => 'invalid ip address'];
         }
         $backend = new Backend();
@@ -265,7 +295,7 @@ class ServiceController extends ApiMutableServiceControllerBase
         $ip = trim((string)$this->request->getPost('ip', 'striptags', ''));
         $source = trim((string)$this->request->getPost('source', 'striptags', 'manual'));
         $note = trim((string)$this->request->getPost('note', 'striptags', ''));
-        if ($ip === '' || !filter_var($ip, FILTER_VALIDATE_IP)) {
+        if ($ip === '' || !$this->validIpOrCidr($ip)) {
             return ['status' => 'failed', 'message' => 'invalid ip address'];
         }
         $source = preg_replace('/[^A-Za-z0-9 _\-\.\:]/', '', $source) ?: 'manual';
@@ -291,7 +321,7 @@ class ServiceController extends ApiMutableServiceControllerBase
             return ['status' => 'failed', 'message' => 'POST required'];
         }
         $ip = trim((string)$this->request->getPost('ip', 'striptags', ''));
-        if ($ip === '' || !filter_var($ip, FILTER_VALIDATE_IP)) {
+        if ($ip === '' || !$this->validIpOrCidr($ip)) {
             return ['status' => 'failed', 'message' => 'invalid ip address'];
         }
         $backend = new Backend();
