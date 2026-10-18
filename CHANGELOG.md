@@ -3,6 +3,11 @@
 All notable changes to this project are documented here.
 The format roughly follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project uses [Semantic Versioning](https://semver.org/).
 
+## [0.14.1] — 2026-10-18
+
+### Fixed
+- **Perma-Block and Self-Defense blocks were attributed to the blacklist rule in the live log ([#13](https://github.com/KaiOppi/os-abuseipdb/issues/13)).** All three block rules are `quick`, so the first matching one wins and gets the log entry. The downloaded-blacklist rule could end up above the Perma-Block and Self-Defense rules (classic rules had no fixed order — it depended on the order features were last saved; automation rules all shared one sequence). Since perma-blocked / self-defended IPs are repeat offenders that are usually *also* on the bulk AbuseIPDB blacklist, their packets were logged under the blacklist rule, so the operator never saw them attributed to Perma-Block or Self-Defense (only blacklist hits and default-deny showed). The rules now keep a deterministic order with **Perma-Block and Self-Defense above the blacklist rule**, so a block you decided locally is logged as exactly that. Blocking behaviour is unchanged (the IP was blocked either way) — this only corrects the log attribution. No schema or config change.
+
 ## [0.14.0] — 2026-10-14
 
 ### Fixed

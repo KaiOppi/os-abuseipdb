@@ -15,7 +15,7 @@ OPNsense plugin for bidirectional [AbuseIPDB](https://www.abuseipdb.com) integra
 - **Dashboard widget** — live stats (blocklist size, last download, quota, reports, self-defense active/total, perma-block size, whitelist size).
 - **Fire & forget** — cron jobs are created automatically when you enable the feature (daily download, 5-minute reporter cycles, hourly self-defense cleanup, daily perma-block sweep, 5-minute hit-counter sampler).
 
-> **Status:** public beta (v0.14.0). Running in production on several OPNsense boxes (26.1 / FreeBSD 14 and 26.7 / FreeBSD 15). Looking for community testers — please open an issue or a r/opnsense reply with feedback.
+> **Status:** public beta (v0.14.1). Running in production on several OPNsense boxes (26.1 / FreeBSD 14 and 26.7 / FreeBSD 15). Looking for community testers — please open an issue or a r/opnsense reply with feedback.
 
 ## Screenshots
 
@@ -92,7 +92,7 @@ it-service-nf OPNsense plugins).
 ### Method B — direct package *(no external repository)*
 
 ```sh
-pkg add https://github.com/KaiOppi/os-abuseipdb/releases/download/v0.14.0/os-abuseipdb-0.14.0.pkg
+pkg add https://github.com/KaiOppi/os-abuseipdb/releases/download/v0.14.1/os-abuseipdb-0.14.1.pkg
 ```
 
 Since v0.11.2 the plugin self-registers on install, so this method also lands as
@@ -116,7 +116,7 @@ first:
 
 ```sh
 # Replace the version with the latest from the releases page
-pkg add -f https://github.com/KaiOppi/os-abuseipdb/releases/download/v0.14.0/os-abuseipdb-0.14.0.pkg
+pkg add -f https://github.com/KaiOppi/os-abuseipdb/releases/download/v0.14.1/os-abuseipdb-0.14.1.pkg
 ```
 
 Notes:

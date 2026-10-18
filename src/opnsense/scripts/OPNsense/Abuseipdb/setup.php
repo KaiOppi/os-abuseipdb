@@ -297,6 +297,54 @@ function classic_apply(&$config, $marker, $alias, $block_ifs_csv, $is_floating, 
     }
 }
 
+// Reorder the plugin's classic rules so they sit at the very top of the
+// filter list in a fixed top-to-bottom order ($ordered_markers), regardless
+// of the order they were created in across earlier saves. Only the rules
+// actually present are touched; all other rules keep their relative order.
+// No-op (and no dirty flag) when the order is already correct, so repeated
+// setup runs stay idempotent.
+function classic_enforce_order(&$config, $ordered_markers, &$dirty_classic) {
+    // Markers present now, in the desired order.
+    $desired = [];
+    foreach ($ordered_markers as $m) {
+        if (classic_find($config, $m) !== null) {
+            $desired[] = $m;
+        }
+    }
+    if (count($desired) < 2) {
+        return; // nothing meaningful to order
+    }
+    // Current order of those same markers, by array position.
+    $cur = [];
+    foreach ($config["filter"]["rule"] as $r) {
+        $d = is_array($r) ? ($r["descr"] ?? "") : "";
+        if (in_array($d, $desired, true)) {
+            $cur[] = $d;
+        }
+    }
+    if ($cur === $desired) {
+        return; // already in the right order
+    }
+    // Capture the rule bodies, remove them, re-insert at the top in order.
+    $bodies = [];
+    foreach ($desired as $m) {
+        $bodies[$m] = $config["filter"]["rule"][classic_find($config, $m)];
+    }
+    $idxs = [];
+    foreach ($desired as $m) {
+        $idxs[] = classic_find($config, $m);
+    }
+    rsort($idxs); // delete from the back so earlier indices stay valid
+    foreach ($idxs as $i) {
+        array_splice($config["filter"]["rule"], $i, 1);
+    }
+    foreach (array_reverse($desired) as $m) {
+        array_unshift($config["filter"]["rule"], $bodies[$m]);
+    }
+    $dirty_classic = true;
+    echo "classic: reordered plugin rules (perma-block/self-defense above blacklist)\n";
+}
+
 // ---- helpers: automation Filter model ----
 
 function automation_find($filter_mdl, $marker) {
@@ -319,7 +367,7 @@ function automation_remove($filter_mdl, $marker, &$dirty_filter) {
     return false;
 }
 
-function automation_apply($filter_mdl, $marker, $alias, $block_ifs_csv, &$dirty_filter) {
+function automation_apply($filter_mdl, $marker, $alias, $block_ifs_csv, $sequence, &$dirty_filter) {
     [$uuid, $r] = automation_find($filter_mdl, $marker);
 
     if ($r === null) {
@@ -339,11 +387,16 @@ function automation_apply($filter_mdl, $marker, $alias, $block_ifs_csv, &$dirty_
         $r->disablereplyto = "1";
         $r->log = "1";
         $r->description = $marker;
-        // Sequence 1 = top of the list. Multiple plugin rules with seq=1
-        // are tolerated; their relative order is then by add-order.
-        $r->sequence = "1";
+        // Distinct sequences so the three plugin rules keep a deterministic
+        // order (all are "quick", so the first match wins and gets the log
+        // attribution). Perma-block (1) and self-defense (2) sit ABOVE the
+        // downloaded blacklist (3): an IP the operator permanently/locally
+        // blocked that also happens to be on the bulk blacklist is then
+        // logged as the local decision, not swallowed by the blacklist rule
+        // (issue #13).
+        $r->sequence = (string)$sequence;
         $dirty_filter = true;
-        echo "automation: '$marker' created\n";
+        echo "automation: '$marker' created (seq $sequence)\n";
     } else {
         $changed = false;
         $want = [
@@ -357,6 +410,7 @@ function automation_apply($filter_mdl, $marker, $alias, $block_ifs_csv, &$dirty_
             "destination_net"=> "any",
             "disablereplyto" => "1",
             "log"            => "1",
+            "sequence"       => (string)$sequence,
         ];
         foreach ($want as $k => $v) {
             $cur = (string)$r->$k;
@@ -390,7 +444,7 @@ classic_normalise($config);
 $filter_mdl = new FwFilter();
 
 function ensure_rule($marker, $alias, $want, $effective_style, $last_style,
-                     $block_ifs_csv, $is_floating,
+                     $block_ifs_csv, $is_floating, $priority,
                      &$config, $filter_mdl,
                      &$dirty_classic, &$dirty_filter) {
 
@@ -422,16 +476,20 @@ function ensure_rule($marker, $alias, $want, $effective_style, $last_style,
     if ($effective_style === "classic") {
         classic_apply($config, $marker, $alias, $block_ifs_csv, $is_floating, $dirty_classic);
     } else if ($effective_style === "automation") {
-        automation_apply($filter_mdl, $marker, $alias, $block_ifs_csv, $dirty_filter);
+        automation_apply($filter_mdl, $marker, $alias, $block_ifs_csv, $priority, $dirty_filter);
     }
     // else: effective=none, no apply.
 }
 
+// Priority (lower = higher in the ruleset = matches first under "quick").
+// Perma-block (1) and self-defense (2) sit ABOVE the downloaded blacklist
+// (3) so an IP that is on several lists is logged as the operator's own
+// local decision rather than swallowed by the bulk blacklist rule (#13).
 ensure_rule(
     $rule_marker, $alias_name,
     $plugin_enabled && $blacklist_on,
     $effective_style, $last_style,
-    $block_ifs_csv, $is_floating,
+    $block_ifs_csv, $is_floating, 3,
     $config, $filter_mdl,
     $dirty_classic, $dirty_filter
 );
@@ -439,7 +497,7 @@ ensure_rule(
     $selfcare_rule_marker, $selfcare_alias_name,
     $plugin_enabled && $selfcare_on,
     $effective_style, $last_style,
-    $block_ifs_csv, $is_floating,
+    $block_ifs_csv, $is_floating, 2,
     $config, $filter_mdl,
     $dirty_classic, $dirty_filter
 );
@@ -447,10 +505,24 @@ ensure_rule(
     $permaban_rule_marker, $permaban_alias_name,
     $plugin_enabled && $permaban_on,
     $effective_style, $last_style,
-    $block_ifs_csv, $is_floating,
+    $block_ifs_csv, $is_floating, 1,
     $config, $filter_mdl,
     $dirty_classic, $dirty_filter
 );
+
+// Classic <filter><rule> has no per-rule sequence field — order is array
+// position, and "created at top" (array_unshift) makes it depend on the
+// order features were last toggled/saved, so the blacklist rule could end
+// up above perma-block/self-defense and claim their log attribution (#13).
+// Enforce a deterministic top-to-bottom order among the three plugin rules:
+// perma-block, then self-defense, then blacklist.
+if ($effective_style === "classic") {
+    classic_enforce_order(
+        $config,
+        [$permaban_rule_marker, $selfcare_rule_marker, $rule_marker],
+        $dirty_classic
+    );
+}
 
 // Persist the new "last applied style" if it actually changed.
 if ($last_style !== $effective_style) {
